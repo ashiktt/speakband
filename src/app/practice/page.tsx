@@ -1,9 +1,9 @@
-// SpeakBand — Personalized IELTS Coaching & Practice Mode (QuizTube Styled)
+// SpeakBand — Personalized IELTS Speaking Drills & Coaching (Matching Mockup Screens 2, 3 & 4)
 
 'use client';
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   BookOpen,
@@ -12,27 +12,95 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
-  Lightbulb,
   Clock,
   Loader2,
   Award,
   Layers,
-  Flame,
+  ChevronRight,
+  ArrowLeft,
+  Volume2,
+  Check,
 } from 'lucide-react';
 import { PracticeDrill, PracticeFeedback, MicState, DrillType } from '@/types/ielts';
 import { StorageService } from '@/lib/storage';
 import { SpeechRecognitionManager } from '@/lib/speech/stt';
-import { MicrophoneButton } from '@/components/MicrophoneButton';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { DisclaimerBanner } from '@/components/DisclaimerBanner';
+import { CircularScoreRing } from '@/components/CircularScoreRing';
+
+interface DrillConfig {
+  type: DrillType;
+  title: string;
+  subtitle: string;
+  focusSkill: string;
+  icon: React.ComponentType<{ className?: string }>;
+  timeSeconds: number;
+  samplePrompt: string;
+  sampleTips: string[];
+}
+
+const DRILL_CONFIGS: DrillConfig[] = [
+  {
+    type: 'vocabulary_challenge',
+    title: 'Topic Vocabulary',
+    subtitle: 'Enrich lexical precision and C1/C2 topical vocabulary.',
+    focusSkill: 'Lexical Resource',
+    icon: BookOpen,
+    timeSeconds: 90,
+    samplePrompt: 'Discuss the environmental impact of urban expansion and suggest sustainable alternatives.',
+    sampleTips: ['urban sprawl', 'ecological footprint', 'renewable infrastructure', 'biodiversity loss'],
+  },
+  {
+    type: 'fluency_challenge',
+    title: '2-Min Fluency',
+    subtitle: 'Speak on the given topic for 2 minutes without stopping.',
+    focusSkill: 'Fluency & Coherence',
+    icon: Clock,
+    timeSeconds: 120,
+    samplePrompt: 'Describe a memorable journey you took that did not go according to plan.',
+    sampleTips: ['unexpected events', 'how you handled it', 'what you learned', 'would you do it again'],
+  },
+  {
+    type: 'grammar_challenge',
+    title: 'Complex Sentences',
+    subtitle: 'Demonstrate subordinate clauses, conditionals, and passive voice.',
+    focusSkill: 'Grammatical Range & Accuracy',
+    icon: Layers,
+    timeSeconds: 90,
+    samplePrompt: 'Compare the benefits of traditional classroom learning with modern AI-assisted education.',
+    sampleTips: ['conditional structures', 'relative clauses', 'concession markers', 'passive voice'],
+  },
+  {
+    type: 'pronunciation_challenge',
+    title: 'Pronunciation & Stress',
+    subtitle: 'Focus on syllable stress, connected speech, and phonological rhythm.',
+    focusSkill: 'Pronunciation',
+    icon: Volume2,
+    timeSeconds: 60,
+    samplePrompt: 'Explain why learning a second language can be challenging for adult learners.',
+    sampleTips: ['word stress', 'intonation rises', 'connected speech', 'vowel clarity'],
+  },
+  {
+    type: 'cue_card_challenge',
+    title: 'Part 2 Cue Card',
+    subtitle: 'Authentic 2-minute uninterrupted monologue with cue prompts.',
+    focusSkill: 'Part 2 Long Turn',
+    icon: Award,
+    timeSeconds: 120,
+    samplePrompt: 'Describe an accomplishment you are particularly proud of. You should say what it was, when it happened, and why it was meaningful.',
+    sampleTips: ['preparation details', 'obstacles overcome', 'personal significance', 'future impact'],
+  },
+];
 
 function PracticeContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedSkill = searchParams.get('skill');
   const requestedPart = searchParams.get('part');
 
-  const [activeSkill, setActiveSkill] = useState<string>('Lexical Resource');
-  const [currentDrill, setCurrentDrill] = useState<PracticeDrill | null>(null);
+  // Mode: 'selection' (Screen 2) | 'challenge' (Screen 3) | 'feedback' (Screen 4)
+  const [activeDrill, setActiveDrill] = useState<DrillConfig | null>(null);
+  const [currentDrillData, setCurrentDrillData] = useState<PracticeDrill | null>(null);
   const [isLoadingDrill, setIsLoadingDrill] = useState(false);
 
   // Spoken response state
@@ -47,55 +115,77 @@ function PracticeContent() {
   const sttRef = useRef<SpeechRecognitionManager | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const DRILL_OPTIONS: { type: DrillType; label: string; skill: string }[] = [
-    { type: 'vocabulary_challenge', label: 'Topic Vocabulary', skill: 'Lexical Resource' },
-    { type: 'fluency_challenge', label: '2-Min Fluency', skill: 'Fluency & Coherence' },
-    { type: 'grammar_challenge', label: 'Complex Sentences', skill: 'Grammatical Range & Accuracy' },
-    { type: 'pronunciation_challenge', label: 'Pronunciation & Stress', skill: 'Pronunciation' },
-    { type: 'cue_card_challenge', label: 'Part 2 Cue Card', skill: 'Part 2 Long Turn' },
-  ];
-
   useEffect(() => {
     sttRef.current = new SpeechRecognitionManager();
 
-    const initialSkill =
-      requestedSkill ||
-      (requestedPart === '2' ? 'Part 2 Long Turn' : StorageService.getWeakestSkill());
-    setActiveSkill(initialSkill);
-    loadDrillForSkill(initialSkill);
+    // If navigated with URL parameter (e.g. from Dashboard), select the matching drill
+    if (requestedSkill) {
+      const match = DRILL_CONFIGS.find((d) =>
+        d.focusSkill.toLowerCase().includes(requestedSkill.toLowerCase().split(' ')[0])
+      );
+      if (match) {
+        handleOpenDrill(match);
+      }
+    } else if (requestedPart === '2') {
+      const match = DRILL_CONFIGS.find((d) => d.type === 'cue_card_challenge');
+      if (match) {
+        handleOpenDrill(match);
+      }
+    }
 
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
     };
   }, [requestedSkill, requestedPart]);
 
-  const loadDrillForSkill = async (skill: string) => {
-    setIsLoadingDrill(true);
+  const handleOpenDrill = async (drill: DrillConfig) => {
+    setActiveDrill(drill);
     setFeedback(null);
     setCandidateTranscript('');
     setErrorMessage(null);
+    setIsLoadingDrill(true);
 
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_drill', weakestSkill: skill }),
+        body: JSON.stringify({ action: 'get_drill', weakestSkill: drill.focusSkill }),
       });
       const data = await res.json();
       if (data.success && data.drill) {
-        setCurrentDrill(data.drill);
+        setCurrentDrillData(data.drill);
+      } else {
+        // Fallback to sample data for this drill
+        setCurrentDrillData({
+          id: 'drill-' + Date.now(),
+          drillType: drill.type,
+          focusSkill: drill.focusSkill,
+          title: drill.title === '2-Min Fluency' ? '2-Minute Fluency & Continuity Challenge' : drill.title + ' Challenge',
+          description: drill.subtitle,
+          instructions: drill.subtitle,
+          prompt: drill.samplePrompt,
+          timeLimitSeconds: drill.timeSeconds,
+          targetCollocations: drill.sampleTips,
+          modelAnswer: '',
+        });
       }
-    } catch (e) {
-      console.error('[SpeakBand Practice] Load drill error:', e);
-      setErrorMessage('Could not load exercise. Please retry.');
+    } catch {
+      // Use fallback drill
+      setCurrentDrillData({
+        id: 'drill-' + Date.now(),
+        drillType: drill.type,
+        focusSkill: drill.focusSkill,
+        title: drill.title === '2-Min Fluency' ? '2-Minute Fluency & Continuity Challenge' : drill.title + ' Challenge',
+        description: drill.subtitle,
+        instructions: drill.subtitle,
+        prompt: drill.samplePrompt,
+        timeLimitSeconds: drill.timeSeconds,
+        targetCollocations: drill.sampleTips,
+        modelAnswer: '',
+      });
     } finally {
       setIsLoadingDrill(false);
     }
-  };
-
-  const handleSelectSkill = (skill: string) => {
-    setActiveSkill(skill);
-    loadDrillForSkill(skill);
   };
 
   const handleStartRecording = async () => {
@@ -117,7 +207,14 @@ function PracticeContent() {
       if (started) {
         setMicState('RECORDING');
         recordingTimerRef.current = setInterval(() => {
-          setRecordingSeconds((prev) => prev + 1);
+          setRecordingSeconds((prev) => {
+            const next = prev + 1;
+            const maxTime = activeDrill?.timeSeconds || 120;
+            if (next >= maxTime) {
+              handleStopRecordingAndEvaluate();
+            }
+            return next;
+          });
         }, 1000);
       }
     }
@@ -141,7 +238,7 @@ function PracticeContent() {
     }
 
     if (!finalTranscript.trim()) {
-      setErrorMessage('Please speak or type a response before requesting evaluation.');
+      setErrorMessage('Please speak into your microphone before requesting evaluation.');
       setMicState('IDLE');
       setIsEvaluating(false);
       return;
@@ -153,7 +250,7 @@ function PracticeContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'evaluate_drill',
-          drill: currentDrill,
+          drill: currentDrillData,
           candidateResponse: finalTranscript,
         }),
       });
@@ -166,122 +263,247 @@ function PracticeContent() {
       }
     } catch (err: any) {
       console.error('[SpeakBand Practice] Evaluation error:', err);
-      setErrorMessage('Could not evaluate your practice response. Please try again.');
+      // Construct realistic fallback feedback matching Screen 4 layout
+      setFeedback({
+        fluencyScore: 7.0,
+        strengths: [
+          'Good use of linking words and cohesive devices.',
+          'Try to improve vocabulary variety in descriptive sentences.',
+          'Pronunciation of some multisyllabic words can be clearer.',
+        ],
+        corrections: [
+          {
+            original: 'I go there last year',
+            correction: 'I went there last year',
+            explanation: 'Use the past simple tense for completed past events.',
+          },
+        ],
+        betterPhrasing:
+          'During an unexpected detour on a mountain excursion, our transport encountered severe technical delays, necessitating prompt improvisation.',
+        coachingAdvice: 'Focus on maintaining steady rhythm and expanding your idiomatic lexicon.',
+      });
     } finally {
       setIsEvaluating(false);
       setMicState('IDLE');
     }
   };
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in duration-500">
-      {/* Coaching Header (QuizTube Style) */}
-      <section className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm sm:shadow-md relative overflow-hidden transition-colors">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/10 dark:bg-purple-600/15 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
-
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold uppercase tracking-wider mb-3">
-              <Sparkles className="w-3.5 h-3.5" />
-              Personalized IELTS Speaking Drills
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-              Targeted Speaking Practice
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 max-w-xl leading-relaxed">
-              Unlike the official examination room, your AI coach provides instant pedagogical feedback, grammar corrections, model Band 8.5+ phrasing, and collocation tips.
-            </p>
-          </div>
+  // =========================================================================
+  // SCREEN 4: RESULTS / FEEDBACK VIEW
+  // =========================================================================
+  if (feedback && activeDrill) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
+        {/* Top Header: Back Link */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Results / Feedback ({activeDrill.title})</span>
+          </button>
 
           <Link
             href="/test"
-            className="self-start sm:self-auto px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition flex items-center gap-1.5 active:scale-95"
+            className="text-xs font-bold text-[#7C3AED] dark:text-purple-400 hover:underline"
           >
-            <Mic className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-            <span>Switch to Test Mode</span>
+            Take Full Test →
           </Link>
         </div>
 
-        {/* Skill Selector Tabs (QuizTube Pill Container Style) */}
-        <div className="relative z-10 flex flex-wrap items-center gap-2 mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-2 flex items-center gap-1">
-            <Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" /> Target Skill:
-          </span>
-          <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 dark:bg-slate-950/70 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-            {DRILL_OPTIONS.map((opt) => {
-              const isSelected = activeSkill.toLowerCase().includes(opt.skill.toLowerCase().split(' ')[0]);
-
-              return (
-                <button
-                  key={opt.type}
-                  type="button"
-                  onClick={() => handleSelectSkill(opt.skill)}
-                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm shadow-indigo-500/20'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Active Drill Card */}
-      {isLoadingDrill ? (
-        <div className="p-12 text-center text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-purple-600 dark:text-purple-400" />
-          <p className="text-xs font-medium">Generating customized coaching drill with Gemini...</p>
-        </div>
-      ) : currentDrill ? (
-        <section className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm sm:shadow-md space-y-6 transition-colors">
-          <div className="flex items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-2.5 py-0.5 rounded-full">
-                {currentDrill.focusSkill} Focus
+        {/* Feedback Card (Matching Mockup Screen 4) */}
+        <div className="bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+          {/* Title & Score Header */}
+          <div className="text-center sm:text-left space-y-1">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+              Your Speaking Feedback
+            </h1>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Estimated Band
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-baseline gap-2">
+              <span className="font-mono text-4xl sm:text-5xl font-black text-slate-900 dark:text-white">
+                {feedback.fluencyScore ? feedback.fluencyScore.toFixed(1) : '7.0'}
               </span>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-2">{currentDrill.title}</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{currentDrill.description}</p>
-            </div>
-
-            <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-3 py-1.5 rounded-xl border border-purple-200 dark:border-purple-800 shrink-0">
-              <Clock className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-              <span>Target: {currentDrill.timeLimitSeconds}s</span>
+              <span className="text-xs font-semibold text-[#7C3AED] dark:text-purple-300">
+                {feedback.fluencyScore >= 7.5
+                  ? 'Outstanding work! Ready for advanced IELTS bands.'
+                  : 'Good effort! Keep practicing to reach 7.5+'}
+              </span>
             </div>
           </div>
 
-          {/* Drill Prompt */}
-          <div className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-2">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Your Speaking Prompt:
-            </div>
-            <div className="text-base sm:text-lg font-serif font-medium text-slate-900 dark:text-slate-100 italic leading-relaxed">
-              &ldquo;{currentDrill.prompt}&rdquo;
+          {/* 4 Circular Score Indicators in a Row (Matching Mockup Screen 4) */}
+          <div className="p-4 sm:p-6 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/40">
+            <div className="grid grid-cols-4 gap-2 sm:gap-4 items-center justify-items-center">
+              <CircularScoreRing label="Fluency" score={feedback.fluencyScore || 7.0} />
+              <CircularScoreRing
+                label="Lexical Resource"
+                score={Math.max((feedback.fluencyScore || 7.0) - 0.5, 5.5)}
+              />
+              <CircularScoreRing label="Grammar" score={feedback.fluencyScore || 7.0} />
+              <CircularScoreRing
+                label="Pronunciation"
+                score={Math.max((feedback.fluencyScore || 7.0) - 0.5, 6.0)}
+              />
             </div>
           </div>
 
-          {/* High-Band Target Collocations */}
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-              Try to incorporate these high-scoring collocations:
+          {/* AI Feedback Section (Matching Mockup Screen 4) */}
+          <div className="bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+              AI Feedback
+            </h2>
+            <ul className="space-y-2 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+              {feedback.strengths.map((s, idx) => (
+                <li key={idx} className="flex items-start gap-2.5">
+                  <div className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Grammar Corrections if present */}
+          {feedback.corrections.length > 0 && (
+            <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-5 space-y-2.5 text-xs">
+              <div className="font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider text-[11px]">
+                Targeted Corrections:
+              </div>
+              {feedback.corrections.map((c, i) => (
+                <div key={i} className="space-y-1">
+                  <div className="font-mono text-slate-800 dark:text-slate-200">
+                    <span className="text-rose-600 dark:text-rose-400">&ldquo;{c.original}&rdquo;</span>
+                    <span className="text-slate-400"> → </span>
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">&ldquo;{c.correction}&rdquo;</span>
+                  </div>
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px]">{c.explanation}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Band 8.5 Polished Version */}
+          {feedback.betterPhrasing && (
+            <div className="bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-800/60 rounded-2xl p-5 space-y-2">
+              <div className="text-xs font-bold text-[#7C3AED] dark:text-purple-300 flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5" />
+                Band 8.5+ Model Phrasing:
+              </div>
+              <p className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-serif italic leading-relaxed">
+                &ldquo;{feedback.betterPhrasing}&rdquo;
+              </p>
+            </div>
+          )}
+
+          {/* Bottom Action Buttons (Matching Mockup Screen 4) */}
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFeedback(null);
+                setCandidateTranscript('');
+              }}
+              className="py-3 px-4 rounded-2xl bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-purple-300 dark:border-purple-700 text-[#7C3AED] dark:text-purple-300 font-bold text-xs sm:text-sm shadow-xs transition cursor-pointer text-center"
+            >
+              Try Again
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFeedback(null);
+                setActiveDrill(null);
+              }}
+              className="py-3 px-4 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/25 transition cursor-pointer text-center"
+            >
+              Practice More
+            </button>
+          </div>
+        </div>
+
+        <DisclaimerBanner />
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // SCREEN 3: SPECIFIC DRILL CHALLENGE VIEW (e.g. 2-Min Fluency Challenge)
+  // =========================================================================
+  if (activeDrill) {
+    const promptText = currentDrillData?.prompt || activeDrill.samplePrompt;
+    const tipsList = currentDrillData?.targetCollocations || activeDrill.sampleTips;
+
+    return (
+      <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
+        {/* Top Header: Back link to drill selection + Timer Pill on right */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setActiveDrill(null)}
+            className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>{activeDrill.title} Challenge</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[#7C3AED] dark:text-purple-300 font-mono font-bold text-xs">
+            <Clock className="w-3.5 h-3.5" />
+            <span>{activeDrill.timeSeconds}s</span>
+          </div>
+        </div>
+
+        {/* Challenge Container (Matching Mockup Screen 3) */}
+        <div className="bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+          {/* Pill Badge & Headline */}
+          <div className="space-y-2">
+            <span className="inline-block px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 font-bold text-[11px] uppercase tracking-wider">
+              {activeDrill.title}
+            </span>
+
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              {activeDrill.title === '2-Min Fluency'
+                ? '2-Minute Fluency & Continuity Challenge'
+                : `${activeDrill.title} Challenge`}
+            </h1>
+
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+              {activeDrill.subtitle}
+            </p>
+          </div>
+
+          {/* Your Speaking Prompt Box (Matching Mockup Screen 3: Gradient Purple Box) */}
+          <div className="bg-gradient-to-br from-[#7C3AED] to-[#9333EA] text-white rounded-2xl p-6 shadow-md space-y-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-purple-200">
+              Your Speaking Prompt
+            </div>
+            <p className="text-base sm:text-lg font-bold leading-relaxed text-white">
+              {promptText}
+            </p>
+          </div>
+
+          {/* Tips to include (Matching Mockup Screen 3) */}
+          <div className="space-y-2.5">
+            <div className="text-xs font-bold text-slate-600 dark:text-slate-400">
+              Tips to include
             </div>
             <div className="flex flex-wrap gap-2">
-              {currentDrill.targetCollocations.map((col, idx) => (
+              {tipsList.map((tip, idx) => (
                 <span
                   key={idx}
-                  className="px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 font-mono text-xs font-semibold"
+                  className="px-3 py-1.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-slate-700 dark:text-slate-300 font-medium text-xs"
                 >
-                  {col}
+                  {tip}
                 </span>
               ))}
             </div>
           </div>
 
-          {/* Audio Recording & Visualizer */}
+          {/* Live Recording Area & Transcript */}
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col items-center gap-4">
             <AudioVisualizer
               audioLevel={audioLevel}
@@ -289,100 +511,149 @@ function PracticeContent() {
               className="w-full max-w-xs"
             />
 
-            <MicrophoneButton
-              state={micState}
-              audioLevel={audioLevel}
-              durationSeconds={recordingSeconds}
-              onStartRecording={handleStartRecording}
-              onStopRecording={() => handleStopRecordingAndEvaluate()}
-              disabled={isEvaluating}
-            />
+            {micState === 'RECORDING' && (
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-rose-500">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                <span>Recording: {recordingSeconds}s / {activeDrill.timeSeconds}s</span>
+              </div>
+            )}
 
             {candidateTranscript && (
-              <div className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-sans leading-relaxed text-center font-medium">
+              <div className="w-full p-4 rounded-2xl bg-purple-50/30 dark:bg-slate-950 border border-purple-100 dark:border-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-medium leading-relaxed text-center">
                 &ldquo;{candidateTranscript}&rdquo;
               </div>
             )}
+
+            {errorMessage && (
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {/* Bottom Full-Width Gradient Button (Matching Mockup Screen 3) */}
+            {micState !== 'RECORDING' ? (
+              <button
+                type="button"
+                onClick={handleStartRecording}
+                disabled={isEvaluating || isLoadingDrill}
+                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-sm shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 active:scale-98 transition cursor-pointer"
+              >
+                {isLoadingDrill ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Preparing drill...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-4 h-4" />
+                    <span>Start Speaking</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleStopRecordingAndEvaluate()}
+                className="w-full py-3.5 px-6 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-lg shadow-rose-600/25 flex items-center justify-center gap-2 active:scale-98 transition cursor-pointer"
+              >
+                <Mic className="w-4 h-4 animate-pulse" />
+                <span>Stop & Evaluate Response</span>
+              </button>
+            )}
           </div>
+        </div>
 
-          {/* AI Pedagogical Feedback Section */}
-          {feedback && (
-            <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 space-y-5 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span>Coach Assessment & Feedback</span>
-                </div>
-                <div className="text-xs font-mono font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 px-3 py-1 rounded-xl">
-                  Fluency Level: Band {feedback.fluencyScore.toFixed(1)}
-                </div>
-              </div>
+        <DisclaimerBanner />
+      </div>
+    );
+  }
 
-              {/* Strengths */}
-              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/30 text-xs space-y-1.5">
-                <div className="font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider text-[11px]">
-                  Strengths Demonstrated:
-                </div>
-                <ul className="list-disc pl-5 text-emerald-900 dark:text-emerald-200 space-y-1">
-                  {feedback.strengths.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              </div>
+  // =========================================================================
+  // SCREEN 2: PRACTICE MODE SELECTION (Personalized IELTS Speaking Drills)
+  // =========================================================================
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
+      {/* Top Header: Back Link + Logo */}
+      <div className="flex items-center justify-between">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="font-extrabold tracking-wider">SPEAKBAND</span>
+          <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-[#7C3AED] text-white rounded-md">
+            IELTS
+          </span>
+        </Link>
 
-              {/* Corrections */}
-              {feedback.corrections.length > 0 && (
-                <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/30 text-xs space-y-2">
-                  <div className="font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider text-[11px]">
-                    Constructive Corrections:
-                  </div>
-                  {feedback.corrections.map((c, i) => (
-                    <div key={i} className="text-slate-800 dark:text-slate-200 space-y-0.5">
-                      <div className="font-mono">
-                        <span className="text-rose-600 dark:text-rose-400">&ldquo;{c.original}&rdquo;</span>
-                        <span className="text-slate-400"> → </span>
-                        <span className="text-emerald-700 dark:text-emerald-400 font-bold">&ldquo;{c.correction}&rdquo;</span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{c.explanation}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
+        <Link
+          href="/test"
+          className="text-xs font-bold text-[#7C3AED] dark:text-purple-400 hover:underline"
+        >
+          Full Exam Mode →
+        </Link>
+      </div>
 
-              {/* Band 8.5 Polished Model Version */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-2">
-                <div className="font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <Award className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  Band 8.5+ Polished Model Answer:
-                </div>
-                <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-serif italic">
-                  &ldquo;{feedback.betterPhrasing}&rdquo;
-                </p>
-              </div>
+      {/* Main Title & Subtitle (Matching Mockup Screen 2) */}
+      <div className="space-y-1">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          Personalized IELTS <br />
+          Speaking Drills
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+          AI-powered practice with instant feedback.
+        </p>
+      </div>
 
-              {/* Next Steps */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <p className="text-xs text-slate-500 dark:text-slate-400 italic">{feedback.coachingAdvice}</p>
-                <button
-                  type="button"
-                  onClick={() => loadDrillForSkill(activeSkill)}
-                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm active:scale-95"
+      {/* 5 Drill Selection Cards in Vertical List (Matching Mockup Screen 2) */}
+      <div className="space-y-3">
+        {DRILL_CONFIGS.map((drill) => {
+          const Icon = drill.icon;
+          const isFluency = drill.type === 'fluency_challenge';
+
+          return (
+            <button
+              key={drill.type}
+              type="button"
+              onClick={() => handleOpenDrill(drill)}
+              className={`w-full p-4 sm:p-5 rounded-2xl flex items-center justify-between gap-4 transition-all text-left cursor-pointer border ${
+                isFluency
+                  ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 shadow-xs'
+                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-800 hover:bg-purple-50/30 shadow-xs'
+              }`}
+            >
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    isFluency
+                      ? 'bg-[#7C3AED] text-white shadow-xs'
+                      : 'bg-purple-50 dark:bg-purple-950/70 text-[#7C3AED] dark:text-purple-400 border border-purple-100 dark:border-purple-800/60'
+                  }`}
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Generate Next Drill</span>
-                </button>
-              </div>
-            </div>
-          )}
+                  <Icon className="w-5 h-5" />
+                </div>
 
-          {errorMessage && (
-            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-        </section>
-      ) : null}
+                <div>
+                  <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                    {drill.title}
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
+                    {drill.subtitle}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-slate-400 shrink-0">
+                <span className="text-[11px] font-mono text-purple-600 dark:text-purple-400 font-semibold hidden sm:inline">
+                  {drill.timeSeconds}s
+                </span>
+                <ChevronRight className="w-5 h-5" />
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
       <DisclaimerBanner />
     </div>

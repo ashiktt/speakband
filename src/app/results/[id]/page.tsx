@@ -23,6 +23,7 @@ import { StorageService } from '@/lib/storage';
 import { BandBadge } from '@/components/BandBadge';
 import { CriterionCard } from '@/components/CriterionCard';
 import { DisclaimerBanner } from '@/components/DisclaimerBanner';
+import { CircularScoreRing } from '@/components/CircularScoreRing';
 import { CRITERIA_DESCRIPTORS } from '@/lib/scoringEngine';
 
 export default function ResultsDashboard() {
@@ -121,6 +122,30 @@ export default function ResultsDashboard() {
           </div>
 
           <BandBadge score={evaluation.overallBand} size="hero" label="Overall Band" />
+        </div>
+      </section>
+
+      {/* Circular Gauges Summary Row matching Mockup Screen 4 */}
+      <section className="bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm transition-colors">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+              Criteria Score Gauges
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Official IELTS 0–9 scale circular performance breakdown.
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-[#7C3AED] dark:text-purple-400 bg-purple-50 dark:bg-purple-950/70 border border-purple-200 dark:border-purple-800 px-3 py-1 rounded-xl w-fit">
+            Equal 25% Weighting
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 items-center justify-items-center py-2">
+          <CircularScoreRing label="Fluency & Coherence" score={evaluation.fluencyBand} size={84} />
+          <CircularScoreRing label="Lexical Resource" score={evaluation.lexicalBand} size={84} />
+          <CircularScoreRing label="Grammatical Range" score={evaluation.grammarBand} size={84} />
+          <CircularScoreRing label="Pronunciation" score={evaluation.pronunciationBand} size={84} />
         </div>
       </section>
 

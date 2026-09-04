@@ -497,7 +497,7 @@ export default function ExaminationRoom() {
             <button
               type="button"
               onClick={handleStartExam}
-              className="w-full sm:w-auto flex-1 py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:via-indigo-600 hover:to-purple-500 text-white font-bold text-sm tracking-wide shadow-lg shadow-indigo-500/25 active:scale-[0.98] transition-all"
+              className="w-full sm:w-auto flex-1 py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-sm tracking-wide shadow-lg shadow-purple-500/25 active:scale-[0.98] transition-all"
             >
               Begin Examination Now
             </button>
@@ -689,7 +689,7 @@ export default function ExaminationRoom() {
                   type="button"
                   onClick={() => stopRecordingAndSubmit(manualText)}
                   disabled={!manualText.trim()}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Submit Typed Answer</span>
