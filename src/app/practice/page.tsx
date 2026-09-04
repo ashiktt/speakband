@@ -30,6 +30,7 @@ import { CircularScoreRing } from '@/components/CircularScoreRing';
 import { reconcilePracticeFeedback } from '@/lib/scoringEngine';
 import { PracticeSessionMemory } from '@/lib/practiceCoach';
 import { getUnusedPracticeQuestion, PART_1_TOPICS, Part1TopicName } from '@/lib/questionBank';
+import { ApiKeyModal } from '@/components/ApiKeyModal';
 
 interface DrillConfig {
   type: DrillType;
@@ -116,6 +117,7 @@ function PracticeContent() {
   const [feedback, setFeedback] = useState<PracticeFeedback | null>(null);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
 
   const sttRef = useRef<SpeechRecognitionManager | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -154,16 +156,21 @@ function PracticeContent() {
     const timeoutId = setTimeout(() => controller.abort(), 25000);
     const recentlyUsedTopics = StorageService.getRecentlyUsedTopics();
 
+    const apiKey = StorageService.getStoredApiKey();
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-gemini-api-key': apiKey } : {}),
+        },
         body: JSON.stringify({
           action: 'get_drill',
           weakestSkill: drill.focusSkill,
           focusSkill: drill.focusSkill,
           drillType: drill.type,
           recentlyUsedTopics,
+          apiKey: apiKey || undefined,
         }),
         signal: controller.signal,
       });
@@ -245,10 +252,14 @@ function PracticeContent() {
     const timeoutId = setTimeout(() => controller.abort(), 25000);
     const recentlyUsedTopics = StorageService.getRecentlyUsedTopics();
 
+    const apiKey = StorageService.getStoredApiKey();
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-gemini-api-key': apiKey } : {}),
+        },
         body: JSON.stringify({
           action: 'next_question',
           memory: sessionMemory,
@@ -256,6 +267,7 @@ function PracticeContent() {
           drillType: activeDrill.type,
           candidateResponse: candidateTranscript || undefined,
           recentlyUsedTopics,
+          apiKey: apiKey || undefined,
         }),
         signal: controller.signal,
       });
@@ -392,10 +404,14 @@ function PracticeContent() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 35000);
 
+    const apiKey = StorageService.getStoredApiKey();
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-gemini-api-key': apiKey } : {}),
+        },
         body: JSON.stringify({
           action: 'evaluate_drill',
           drill: currentDrillData,
@@ -403,6 +419,7 @@ function PracticeContent() {
           audioBase64,
           audioMimeType,
           durationSeconds,
+          apiKey: apiKey || undefined,
         }),
         signal: controller.signal,
       });
@@ -434,7 +451,8 @@ function PracticeContent() {
     const practiceBand = feedback.practiceBandEstimate ?? feedback.fluencyScore ?? 0;
 
     return (
-      <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
+      <>
+        <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
         {/* Top Header: Back Link */}
         <div className="flex items-center justify-between">
           <button
@@ -669,8 +687,14 @@ function PracticeContent() {
 
         <DisclaimerBanner />
       </div>
-    );
-  }
+
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+      />
+    </>
+  );
+}
 
   // =========================================================================
   // SCREEN 3: SPECIFIC DRILL CHALLENGE VIEW (e.g. 2-Min Fluency Challenge)
@@ -680,7 +704,8 @@ function PracticeContent() {
     const tipsList = currentDrillData?.targetCollocations || activeDrill.sampleTips;
 
     return (
-      <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
+      <>
+        <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
         {/* Top Header: Back link to drill selection + Timer Pill on right */}
         <div className="flex items-center justify-between">
           <button
@@ -773,9 +798,20 @@ function PracticeContent() {
             )}
 
             {errorMessage && (
-              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{errorMessage}</span>
+              <div className="w-full p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+                {(errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('gemini')) && (
+                  <button
+                    type="button"
+                    onClick={() => setIsApiKeyModalOpen(true)}
+                    className="shrink-0 px-2.5 py-1 text-[11px] font-bold bg-rose-100 dark:bg-rose-900/60 hover:bg-rose-200 dark:hover:bg-rose-800 text-rose-800 dark:text-rose-200 rounded-lg transition cursor-pointer"
+                  >
+                    Configure Key
+                  </button>
+                )}
               </div>
             )}
 
@@ -814,14 +850,21 @@ function PracticeContent() {
 
         <DisclaimerBanner />
       </div>
-    );
-  }
+
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+      />
+    </>
+  );
+}
 
   // =========================================================================
   // SCREEN 2: PRACTICE MODE SELECTION (Personalized IELTS Speaking Drills)
   // =========================================================================
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
+    <>
+      <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
       {/* Top Header: Back Link + Logo */}
       <div className="flex items-center justify-between">
         <Link
@@ -916,8 +959,14 @@ function PracticeContent() {
         })}
       </div>
 
-      <DisclaimerBanner />
-    </div>
+        <DisclaimerBanner />
+      </div>
+
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+      />
+    </>
   );
 }
 

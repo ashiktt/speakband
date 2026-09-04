@@ -6,7 +6,14 @@ import { generateDynamicExaminerFollowUp } from '@/lib/gemini';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { part, topic, currentQuestion, candidateTranscript, askedQuestions = [] } = body;
+    const {
+      part,
+      topic,
+      currentQuestion,
+      candidateTranscript,
+      askedQuestions = [],
+      customApiKey = body.apiKey || req.headers.get('x-gemini-api-key') || undefined,
+    } = body;
 
     if (!part || !topic || !currentQuestion) {
       return NextResponse.json(
@@ -21,6 +28,7 @@ export async function POST(req: NextRequest) {
       currentQuestion,
       candidateTranscript: candidateTranscript || '',
       askedQuestions,
+      customApiKey,
     });
 
     return NextResponse.json({ success: true, ...followUp });

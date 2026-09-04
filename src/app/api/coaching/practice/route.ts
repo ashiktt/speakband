@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       focusSkill = 'Fluency & Coherence',
       drillType = 'fluency_challenge',
       recentlyUsedTopics = [],
+      customApiKey = body.apiKey || req.headers.get('x-gemini-api-key') || undefined,
     } = body;
 
     if (action === 'get_drill') {
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
         memory: activeMemory,
         focusSkill: weakestSkill || focusSkill,
         drillType,
+        customApiKey,
       });
 
       return NextResponse.json({
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest) {
         memory: activeMemory,
         focusSkill,
         drillType,
+        customApiKey,
       });
 
       return NextResponse.json({
@@ -94,6 +97,7 @@ export async function POST(req: NextRequest) {
         audioBase64: body.audioBase64,
         audioMimeType: body.audioMimeType,
         durationSeconds: body.durationSeconds,
+        customApiKey,
       });
 
       console.log('[API Practice Eval] CALCULATION:', {

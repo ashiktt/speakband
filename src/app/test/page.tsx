@@ -35,6 +35,7 @@ import {
   Play,
 } from 'lucide-react';
 import { MicrophoneCheck } from '@/components/MicrophoneCheck';
+import { ApiKeyModal } from '@/components/ApiKeyModal';
 
 export default function ExaminationRoom() {
   const router = useRouter();
@@ -43,6 +44,7 @@ export default function ExaminationRoom() {
   const [stateMachine, setStateMachine] = useState<ExaminationStateMachine | null>(null);
   const [testState, setTestState] = useState<TestState>('IDLE');
   const [showMicCheck, setShowMicCheck] = useState<boolean>(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
 
   // Question curriculum
   const [part1Questions, setPart1Questions] = useState<Part1Question[]>([]);
@@ -428,12 +430,17 @@ export default function ExaminationRoom() {
         setEvalProgressStep('Acoustic Pronunciation Analysis on audio features...');
       }, 9000);
 
+      const apiKey = StorageService.getStoredApiKey();
       const res = await fetch('/api/examiner/evaluate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-gemini-api-key': apiKey } : {}),
+        },
         body: JSON.stringify({
           responses: allResponses,
           testDurationSeconds: totalTestSeconds,
+          apiKey: apiKey || undefined,
         }),
       });
 
@@ -484,107 +491,133 @@ export default function ExaminationRoom() {
     }
 
     return (
-      <div className="max-w-2xl mx-auto py-6 sm:py-10 animate-in fade-in duration-500">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm sm:shadow-md space-y-6 transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
-              <Clock className="w-6 h-6" />
+      <>
+        <div className="max-w-2xl mx-auto py-6 sm:py-10 animate-in fade-in duration-500">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm sm:shadow-md space-y-6 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                  IELTS Speaking Examination
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Duration: 11–14 minutes • 3 Standard Official Parts
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-                IELTS Speaking Examination
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Duration: 11–14 minutes • 3 Standard Official Parts
+
+            <div className="space-y-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950/60 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+              <div className="font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                Standard IELTS Examination Conditions
+              </div>
+              <p>
+                • <strong>Part 1 (4–5 mins):</strong> Short questions on familiar everyday topics.
+              </p>
+              <p>
+                • <strong>Part 2 (3–4 mins):</strong> Cue card with 1 minute to prepare and up to 2 minutes to speak.
+              </p>
+              <p>
+                • <strong>Part 3 (4–5 mins):</strong> In-depth two-way analytical discussion linked to Part 2.
+              </p>
+              <p className="text-purple-700 dark:text-purple-400 text-xs pt-1 font-semibold">
+                * The examiner operates strictly in official examination mode (no coaching or correction during the test).
               </p>
             </div>
-          </div>
 
-          <div className="space-y-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950/60 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-            <div className="font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider text-xs flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              Standard IELTS Examination Conditions
+            {errorMessage && (
+              <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
+              <button
+                type="button"
+                onClick={() => setShowMicCheck(true)}
+                className="w-full sm:w-auto flex-1 py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-sm tracking-wide shadow-lg shadow-purple-500/25 active:scale-[0.98] transition-all cursor-pointer"
+              >
+                Start Readiness & Mic Check
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="w-full sm:w-auto py-3.5 sm:py-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+              >
+                Return to Dashboard
+              </button>
             </div>
-            <p>
-              • <strong>Part 1 (4–5 mins):</strong> Short questions on familiar everyday topics.
-            </p>
-            <p>
-              • <strong>Part 2 (3–4 mins):</strong> Cue card with 1 minute to prepare and up to 2 minutes to speak.
-            </p>
-            <p>
-              • <strong>Part 3 (4–5 mins):</strong> In-depth two-way analytical discussion linked to Part 2.
-            </p>
-            <p className="text-purple-700 dark:text-purple-400 text-xs pt-1 font-semibold">
-              * The examiner operates strictly in official examination mode (no coaching or correction during the test).
-            </p>
-          </div>
-
-          {errorMessage && (
-            <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-
-          <div className="pt-2 flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => setShowMicCheck(true)}
-              className="w-full sm:w-auto flex-1 py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-sm tracking-wide shadow-lg shadow-purple-500/25 active:scale-[0.98] transition-all cursor-pointer"
-            >
-              Start Readiness & Mic Check
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/')}
-              className="w-full sm:w-auto py-3.5 sm:py-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-            >
-              Return to Dashboard
-            </button>
           </div>
         </div>
-      </div>
+
+        <ApiKeyModal
+          isOpen={isApiKeyModalOpen}
+          onClose={() => setIsApiKeyModalOpen(false)}
+        />
+      </>
     );
   }
 
   // RENDER: EVALUATION IN PROGRESS (QuizTube Styled)
   if (testState === 'EVALUATION') {
     return (
-      <div className="max-w-xl mx-auto py-16 text-center animate-in fade-in duration-500 space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 mx-auto shadow-md animate-pulse">
-          <Loader2 className="w-10 h-10 animate-spin" />
-        </div>
-
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Evaluating IELTS Speaking Exam</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-            AI assessment applying published IELTS Speaking Band Descriptors (0.0–9.0).
-          </p>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-mono text-purple-700 dark:text-purple-300 shadow-sm">
-          {evalProgressStep}
-        </div>
-
-        {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs">
-            {errorMessage}
-            <button
-              type="button"
-              onClick={triggerEvaluation}
-              className="mt-3 px-4 py-2 rounded-xl bg-rose-600 text-white font-bold text-xs shadow-sm"
-            >
-              Retry Evaluation
-            </button>
+      <>
+        <div className="max-w-xl mx-auto py-16 text-center animate-in fade-in duration-500 space-y-6">
+          <div className="w-20 h-20 rounded-3xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 mx-auto shadow-md animate-pulse">
+            <Loader2 className="w-10 h-10 animate-spin" />
           </div>
-        )}
-      </div>
+
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Evaluating IELTS Speaking Exam</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+              AI assessment applying published IELTS Speaking Band Descriptors (0.0–9.0).
+            </p>
+          </div>
+
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-mono text-purple-700 dark:text-purple-300 shadow-sm">
+            {evalProgressStep}
+          </div>
+
+          {errorMessage && (
+            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex flex-col items-center gap-2">
+              <span>{errorMessage}</span>
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={triggerEvaluation}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm cursor-pointer transition"
+                >
+                  Retry Evaluation
+                </button>
+                {(errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('gemini')) && (
+                  <button
+                    type="button"
+                    onClick={() => setIsApiKeyModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm cursor-pointer transition"
+                  >
+                    Configure API Key
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <ApiKeyModal
+          isOpen={isApiKeyModalOpen}
+          onClose={() => setIsApiKeyModalOpen(false)}
+        />
+      </>
     );
   }
 
   // RENDER: ACTIVE EXAMINATION ROOM (QuizTube Styled)
   return (
-    <div className="max-w-3xl mx-auto space-y-5 sm:space-y-6 animate-in fade-in duration-300">
+    <>
+      <div className="max-w-3xl mx-auto space-y-5 sm:space-y-6 animate-in fade-in duration-300">
       {/* State Progress Header (QuizTube Pill Style) */}
       <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-4 sm:px-5 py-3 shadow-sm transition-colors">
         <div className="flex items-center gap-2">
@@ -735,11 +768,28 @@ export default function ExaminationRoom() {
 
       {/* Error alert banner */}
       {errorMessage && (
-        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{errorMessage}</span>
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          {(errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('gemini')) && (
+            <button
+              type="button"
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className="shrink-0 px-2.5 py-1 text-[11px] font-bold bg-rose-100 dark:bg-rose-900/60 hover:bg-rose-200 text-rose-800 dark:text-rose-200 rounded-lg transition cursor-pointer"
+            >
+              Configure Key
+            </button>
+          )}
         </div>
       )}
     </div>
-  );
+
+    <ApiKeyModal
+      isOpen={isApiKeyModalOpen}
+      onClose={() => setIsApiKeyModalOpen(false)}
+    />
+  </>
+);
 }

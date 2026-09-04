@@ -9,7 +9,11 @@ export const maxDuration = 60; // Allow up to 60s for full multi-criteria assess
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { responses, testDurationSeconds = 720 }: { responses: RecordedResponse[]; testDurationSeconds: number } = body;
+    const {
+      responses,
+      testDurationSeconds = 720,
+      customApiKey = body.apiKey || req.headers.get('x-gemini-api-key') || undefined,
+    }: { responses: RecordedResponse[]; testDurationSeconds: number; customApiKey?: string } = body;
 
     if (!responses || !Array.isArray(responses) || responses.length === 0) {
       return NextResponse.json(
@@ -24,7 +28,7 @@ export async function POST(req: NextRequest) {
       testDurationSeconds,
     });
 
-    const evaluation = await evaluateIeltsSpeakingTest(responses, testDurationSeconds);
+    const evaluation = await evaluateIeltsSpeakingTest(responses, testDurationSeconds, customApiKey);
 
     console.log('[API Full Exam Eval] CALCULATION:', {
       overallBand: evaluation.overallBand,

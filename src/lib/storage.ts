@@ -259,4 +259,24 @@ export const StorageService = {
       localStorage.setItem('speakband_recent_cue_cards', JSON.stringify(combined));
     } catch (e) {}
   },
+
+  getStoredApiKey(): string {
+    if (typeof window === 'undefined') return '';
+    try {
+      return localStorage.getItem('speakband_gemini_api_key') || '';
+    } catch (e) {
+      return '';
+    }
+  },
+
+  setStoredApiKey(key: string): void {
+    if (typeof window === 'undefined') return;
+    try {
+      if (key && key.trim()) {
+        localStorage.setItem('speakband_gemini_api_key', key.trim());
+      } else {
+        localStorage.removeItem('speakband_gemini_api_key');
+      }
+    } catch (e) {}
+  },
 };

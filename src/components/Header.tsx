@@ -14,16 +14,19 @@ import {
   Moon,
   Target,
   LogIn,
+  Key,
 } from 'lucide-react';
 import { StorageService } from '@/lib/storage';
 import { useTheme } from './ThemeProvider';
 import { getSupabaseClient } from '@/lib/supabase';
+import { ApiKeyModal } from './ApiKeyModal';
 
 export const Header: React.FC = () => {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const [targetBand, setTargetBand] = useState<number>(7.5);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
 
   useEffect(() => {
     setTargetBand(StorageService.getTargetBand());
@@ -129,6 +132,17 @@ export const Header: React.FC = () => {
               </span>
             </div>
 
+            {/* Gemini API Key Configuration Modal Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+              title="Configure Gemini API Key"
+              aria-label="Gemini API Key Settings"
+            >
+              <Key className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            </button>
+
             {/* Light / Dark Mode Toggle */}
             <button
               type="button"
@@ -197,6 +211,12 @@ export const Header: React.FC = () => {
           })}
         </div>
       </nav>
+
+      {/* Gemini API Key Configuration Modal */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+      />
     </>
   );
 };
