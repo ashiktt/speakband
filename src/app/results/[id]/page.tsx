@@ -89,13 +89,20 @@ export default function ResultsDashboard() {
 
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="space-y-3 text-center md:text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-950/60 border border-purple-200/80 dark:border-purple-800/80 text-purple-700 dark:text-purple-300 text-xs font-bold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5" />
-              Official IELTS Band Scale (0–9)
+            <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-950/60 border border-purple-200/80 dark:border-purple-800/80 text-purple-700 dark:text-purple-300 text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5" />
+                {evaluation.isPracticeEstimate ? 'Practice Band Estimate' : 'Official IELTS Band Scale (0–9)'}
+              </div>
+              {evaluation.confidenceScore !== undefined && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium">
+                  <span>Confidence: <strong className="text-slate-900 dark:text-white font-semibold">{Math.round(evaluation.confidenceScore)}%</strong></span>
+                </div>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              AI ESTIMATED IELTS SPEAKING BAND
+              {evaluation.isPracticeEstimate ? 'AI PRACTICE BAND ESTIMATE' : 'AI ESTIMATED IELTS SPEAKING BAND'}
             </h1>
 
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">

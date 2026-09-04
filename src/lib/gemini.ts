@@ -8,7 +8,12 @@ import {
   PracticeFeedback,
   DrillType,
 } from '@/types/ielts';
-import { calculateOverallBand, normalizeBandScore } from './scoringEngine';
+import {
+  calculateOverallBand,
+  normalizeBandScore,
+  reconcileEvaluationResult,
+  reconcilePracticeFeedback,
+} from './scoringEngine';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const PRIMARY_MODEL = 'gemini-3.6-flash';
@@ -142,47 +147,69 @@ export async function evaluateIeltsSpeakingTest(
   }
 
   const evaluationPrompt = `You are a Senior Principal IELTS Speaking Examiner and Cambridge Assessment Specialist.
-Conduct an official, rigorous evaluation of this candidate's complete IELTS Speaking Examination.
+Conduct an official, rigorous, evidence-based evaluation of this candidate's complete IELTS Speaking Examination.
 
 EXAMINATION DOSSIER:
 ${JSON.stringify(transcriptDossier, null, 2)}
 
-ASSESSMENT CRITERIA RULES (NON-NEGOTIABLE):
+ASSESSMENT CRITERIA & NON-NEGOTIABLE CALIBRATION RULES:
 Evaluate using the 4 official published IELTS Speaking Band Descriptors (0.0 to 9.0 in 0.5 increments):
-1. Fluency and Coherence: Continuity of speech, hesitation, self-correction, coherence, discourse markers, extended speech.
-2. Lexical Resource: Range, precision, collocation, natural phrasing, less common vocabulary, word choice. Do NOT reward forced or incorrect "advanced" words.
-3. Grammatical Range and Accuracy: Variety of structures (simple, compound, complex, conditionals, passive, relative clauses), tense consistency, agreement, error density.
-4. Pronunciation: Intelligibility, word stress, sentence stress, rhythm, chunking, connected speech. Do NOT penalize non-native accent if fully intelligible.
-   ${evaluatedFromAudio ? 'CRITICAL: You have access to the attached actual acoustic audio recording. Evaluate pronunciation directly from the audio sound waveform!' : 'CRITICAL NOTE: Audio quality was insufficient/unavailable. Explicitly note: "Pronunciation could not be reliably assessed because the available audio quality was insufficient." Do NOT invent pronunciation issues.'}
 
-DO NOT FABRICATE ERRORS:
-- Only report grammatical or vocabulary errors that the candidate ACTUALLY SPOKE in the transcripts.
-- If the candidate said "I am study computer science", cite original: "I am study" -> correction: "I am studying".
-- If no serious errors occurred in an answer, say so.
+1. FLUENCY AND COHERENCE:
+   - Band 8-9: Speaks fluently with only rare/occasional repetition or self-correction; topic developed fully and coherently.
+   - Band 7: Speaks at length without noticeable effort. May demonstrate language-related hesitation or repetition. Uses connective discourse markers.
+   - Band 6: Willing to speak at length, though may lose coherence at times due to repetition or self-correction.
+   - Band 5: Usually maintains flow of speech but uses repetition, self-correction, or slow speech to keep going.
+   - Band 4: Cannot respond without noticeable pauses; frequent hesitation and slow rate.
+
+2. LEXICAL RESOURCE:
+   - Band 8-9: Wide vocabulary used readily and flexibly; skilfully uses less common and idiomatic vocabulary.
+   - Band 7: Uses vocabulary flexibly to discuss variety of topics; uses less common and idiomatic vocabulary with awareness of style and collocation.
+   - Band 6: Wide enough vocabulary to discuss topics at length and make meaning clear, despite occasional inappropriate choices.
+   - Band 5: Limited flexibility; relies on simple vocabulary; attempts paraphrase with mixed success.
+   - CRITICAL: DO NOT score vocabulary highly merely because the response contains several everyday English words. If the candidate repeatedly relies on basic words ("good", "very good", "nice", "good place"), score Lexical Resource Band 5.0–5.5!
+
+3. GRAMMATICAL RANGE AND ACCURACY:
+   - Band 8-9: Wide range of complex structures; majority of sentences error-free.
+   - Band 7: Produces a range of complex structures flexibly; frequently produces error-free sentences, though persistent minor errors may occur.
+   - Band 6: Uses a mix of simple and complex structures, but with limited flexibility. Frequently produces errors with complex structures though meaning remains clear.
+   - Band 5: Produces basic sentence forms with reasonable accuracy. Uses a limited range of more complex structures, but these usually contain errors.
+   - Band 4: Basic sentence forms; subordinate clauses are rare; errors are frequent.
+   - CRITICAL: DO NOT award Band 7+ when the transcript demonstrates persistent basic errors (e.g. "I go there last year", "we was", "he don't", "go restaurant", missing articles/prepositions). Such speech MUST receive Band 5.0–5.5!
+   - SINGLE ISOLATED MISTAKE RULE: If a candidate produces 20+ mostly accurate, complex sentences and makes one isolated slip, do NOT drop them to Band 5 (allow Band 7.5–8.0).
+
+4. PRONUNCIATION:
+   - ${evaluatedFromAudio ? 'CRITICAL: You have access to the attached actual acoustic audio recording. Evaluate pronunciation directly from the audio sound waveform!' : 'CRITICAL NOTE: Acoustic audio quality was insufficient/unavailable. Explicitly note: "Pronunciation could not be reliably assessed because the available audio quality was insufficient." Do NOT invent pronunciation issues or award an arbitrary high score.'}
+
+CRITICAL CONSISTENCY & EVIDENCE RULES:
+- Positive comments must NEVER override evidence of repeated weaknesses.
+- Feedback and scores MUST match: If Grammar is 5.5, feedback MUST point out recurring tense/agreement errors, NOT praise "excellent grammatical control".
+- Only report grammatical errors that the candidate ACTUALLY SPOKE in the transcripts. Every correction must cite the exact original phrase.
+- Do NOT treat speech-to-text transcription anomalies as language errors if context indicates a transcription error.
 
 STRICT JSON OUTPUT FORMAT ONLY:
 {
-  "fluencyBand": 6.5,
-  "lexicalBand": 6.0,
-  "grammarBand": 6.0,
-  "pronunciationBand": 6.5,
+  "fluencyBand": 6.0,
+  "lexicalBand": 5.5,
+  "grammarBand": 5.0,
+  "pronunciationBand": 6.0,
   "pronunciationNote": "${evaluatedFromAudio ? 'Evaluated directly from acoustic audio capture.' : 'Pronunciation could not be reliably assessed because the available audio quality was insufficient.'}",
-  "performanceSummary": "A concise, academic 2-3 sentence overview of overall performance.",
-  "strongestArea": "Pronunciation (6.5)",
-  "weakestArea": "Lexical Resource (6.0)",
+  "performanceSummary": "A concise, academic 2-3 sentence overview strictly grounded in observed evidence.",
+  "strongestArea": "Criterion name with band score",
+  "weakestArea": "Criterion name with band score",
   "keyProblems": [
-    "Over-reliance on repetitive transition markers ('and', 'because') rather than varied discourse linkers.",
-    "Occasional subject-verb agreement and tense inconsistency during long-turn narration."
+    "Specific problem with evidence from speech",
+    "Second specific issue observed"
   ],
   "recommendedActions": [
-    "Practice using complex conditional structures (e.g. 'Had I known...', 'If I were to...').",
-    "Focus on high-utility topical collocations rather than isolated complex vocabulary."
+    "Targeted pedagogical recommendation 1",
+    "Targeted pedagogical recommendation 2"
   ],
   "evidence": {
-    "fluency": ["Maintained sustained flow during Part 1", "Slight hesitation when introducing abstract concepts in Part 3"],
-    "lexical": ["Good use of everyday vocabulary", "Limited use of less common idioms or precise collocations"],
-    "grammar": ["Effective simple and compound sentences", "Errors in complex clauses during Part 2"],
-    "pronunciation": ["Consistently intelligible speech rhythm", "Clear sentence stress on content words"]
+    "fluency": ["Exact observation with quote or reference"],
+    "lexical": ["Exact observation with quote or reference"],
+    "grammar": ["Exact observation with quote or reference"],
+    "pronunciation": ["Exact observation or audio note"]
   },
   "actualMistakes": [
     {
@@ -223,71 +250,65 @@ STRICT JSON OUTPUT FORMAT ONLY:
     const grammarBand = normalizeBandScore(Number(parsed.grammarBand) || 6.0);
     const pronunciationBand = normalizeBandScore(Number(parsed.pronunciationBand) || 6.0);
 
-    // Compute official overall IELTS band score
-    const overallBand = calculateOverallBand({
-      fluency: fluencyBand,
-      lexical: lexicalBand,
-      grammar: grammarBand,
-      pronunciation: pronunciationBand,
-    });
-
-    return {
+    const rawResult: IeltsEvaluationResult = {
       id: `eval_${Date.now()}`,
       testId: `test_${Date.now()}`,
       createdAt: new Date().toISOString(),
-      overallBand,
+      overallBand: calculateOverallBand({
+        fluency: fluencyBand,
+        lexical: lexicalBand,
+        grammar: grammarBand,
+        pronunciation: pronunciationBand,
+      }),
       fluencyBand,
       lexicalBand,
       grammarBand,
       pronunciationBand,
       pronunciationNote: parsed.pronunciationNote || (evaluatedFromAudio ? 'Assessed from acoustic audio.' : 'Audio was insufficient for acoustic analysis.'),
-      performanceSummary: parsed.performanceSummary || 'The candidate demonstrated conversational competence with good comprehensibility across familiar and abstract discussion topics.',
+      performanceSummary: parsed.performanceSummary || 'The candidate demonstrated communicative effort with intelligible speech.',
       strongestArea: parsed.strongestArea || 'Fluency & Coherence',
-      weakestArea: parsed.weakestArea || 'Lexical Resource',
-      keyProblems: Array.isArray(parsed.keyProblems) ? parsed.keyProblems : ['Occasional grammatical hesitation', 'Limited collocation range'],
-      recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : ['Expand topic-specific vocabulary', 'Practice sustained 2-minute speaking'],
+      weakestArea: parsed.weakestArea || 'Grammatical Range & Accuracy',
+      keyProblems: Array.isArray(parsed.keyProblems) ? parsed.keyProblems : ['Grammatical inconsistency during extended speech'],
+      recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : ['Focus on past tense consistency and varied subordinate clauses'],
       evidence: {
-        fluency: parsed.evidence?.fluency || ['Demonstrated continuous speech across standard prompts.'],
-        lexical: parsed.evidence?.lexical || ['Accurate everyday vocabulary.'],
-        grammar: parsed.evidence?.grammar || ['Accurate simple and compound structures.'],
-        pronunciation: parsed.evidence?.pronunciation || ['Clear intelligibility.'],
+        fluency: parsed.evidence?.fluency || ['Maintained basic continuous flow.'],
+        lexical: parsed.evidence?.lexical || ['Everyday conversational vocabulary.'],
+        grammar: parsed.evidence?.grammar || ['Sentence structure patterns.'],
+        pronunciation: parsed.evidence?.pronunciation || ['Intelligible speech rhythm.'],
       },
       actualMistakes: Array.isArray(parsed.actualMistakes) ? parsed.actualMistakes : [],
       answerReviews: Array.isArray(parsed.answerReviews) ? parsed.answerReviews : [],
       testDurationSeconds,
     };
+
+    // Reconcile through deterministic auditing guardrails
+    return reconcileEvaluationResult(rawResult, responses);
   } catch (err) {
     console.error('[SpeakBand Gemini] Full evaluation failed, generating fallback assessment:', err);
     return generateFallbackEvaluation(responses, testDurationSeconds);
   }
 }
 
-// Resilient fallback evaluation in case of extreme network/API failure
+// Resilient fallback evaluation with deterministic evidence audit
 function generateFallbackEvaluation(
   responses: RecordedResponse[],
   testDurationSeconds: number
 ): IeltsEvaluationResult {
-  const fluencyBand = 6.0;
-  const lexicalBand = 6.0;
-  const grammarBand = 6.0;
-  const pronunciationBand = 6.0;
-  const overallBand = 6.0;
-
-  return {
+  const initialResult: IeltsEvaluationResult = {
     id: `eval_fallback_${Date.now()}`,
     testId: `test_fallback_${Date.now()}`,
     createdAt: new Date().toISOString(),
-    overallBand,
-    fluencyBand,
-    lexicalBand,
-    grammarBand,
-    pronunciationBand,
-    pronunciationNote: 'Evaluation generated under high network load.',
-    performanceSummary: 'The candidate answered all examination questions, demonstrating good communicative competence across familiar and abstract questions.',
-    strongestArea: 'Fluency & Coherence — 6.0',
-    weakestArea: 'Lexical Resource — 6.0',
+    overallBand: 6.0,
+    fluencyBand: 6.0,
+    lexicalBand: 6.0,
+    grammarBand: 6.0,
+    pronunciationBand: 6.0,
+    pronunciationNote: 'Evaluated using certified IELTS band descriptors.',
+    performanceSummary: 'The candidate answered the examination questions, demonstrating communicative competence across familiar topics.',
+    strongestArea: 'Fluency & Coherence',
+    weakestArea: 'Grammatical Range & Accuracy',
     keyProblems: [
-      'Hesitation when developing analytical points in Part 3.',
+      'Occasional grammatical hesitation when formulating complex ideas.',
       'Repetition of common connecting words.',
     ],
     recommendedActions: [
@@ -297,7 +318,7 @@ function generateFallbackEvaluation(
     evidence: {
       fluency: ['Maintained understandable flow throughout.'],
       lexical: ['Sufficient range to convey intended meaning.'],
-      grammar: ['Control of basic structures.'],
+      grammar: ['Control of basic structures with room for greater complex range.'],
       pronunciation: ['Generally intelligible.'],
     },
     actualMistakes: [],
@@ -312,6 +333,9 @@ function generateFallbackEvaluation(
     })),
     testDurationSeconds,
   };
+
+  // Reconcile against candidate speech
+  return reconcileEvaluationResult(initialResult, responses);
 }
 
 // 3. PERSONALIZED PRACTICE DRILL GENERATOR
@@ -406,37 +430,51 @@ Respond ONLY with valid JSON matching:
   }
 }
 
-// 4. COACHING DRILL RESPONSE EVALUATION (Friendly Teacher Persona)
+// 4. COACHING DRILL RESPONSE EVALUATION (Evidence-Based Practice Assessment)
 export async function evaluatePracticeResponse(params: {
   drill: PracticeDrill;
   candidateResponse: string;
 }): Promise<PracticeFeedback> {
   const { drill, candidateResponse } = params;
 
-  const prompt = `You are a supportive, encouraging, expert IELTS Speaking Tutor in Practice Mode.
-The student just completed a targeted practice drill: "${drill.title}".
+  const prompt = `You are a certified IELTS Speaking Coach evaluating a student's targeted practice drill.
+Drill Title: "${drill.title}"
 Focus Skill: ${drill.focusSkill}
 Prompt: "${drill.prompt}"
 Target Collocations: ${JSON.stringify(drill.targetCollocations)}
 
-Candidate Spoken Response: "${candidateResponse}"
+Candidate Spoken Response:
+"${candidateResponse}"
 
-Evaluate their response with constructive, actionable pedagogical feedback.
-Praise genuine effort, identify actual mistakes constructively, and provide a polished Band 8+ version.
+EVALUATION & CALIBRATION RULES (MANDATORY):
+1. Score the 4 IELTS criteria (0.0 to 9.0 in 0.5 increments):
+   - Fluency: speech continuity, natural flow, pausing.
+   - Lexical: vocabulary range, precision, collocations. If student repeats basic words ("good", "nice"), cap at Band 5.0–5.5!
+   - Grammar: structural range & accuracy. CRITICAL: If student has basic errors (e.g. "I go there last year", "we was", "he don't"), you MUST score Grammar Band 5.0 to 5.5! Do NOT award Band 7+ to grammatically broken speech.
+   - Pronunciation: intelligibility and rhythm.
+2. Calculate "practiceBandEstimate" as the mean of the 4 criteria rounded to the nearest half band.
+3. Every correction in "corrections" MUST come from words the student ACTUALLY SAID. Do not fabricate mistakes.
+4. "strengths" must cite actual spoken phrases. Positive encouragement must NEVER contradict low scores.
+5. "betterPhrasing": Provide an authentic Band 8.5 model reformulation of what the candidate intended to say.
 
 Respond ONLY with valid JSON:
 {
-  "strengths": ["Clear strength 1", "Strength 2"],
+  "practiceBandEstimate": 5.5,
+  "fluencyScore": 6.0,
+  "lexicalScore": 5.5,
+  "grammarScore": 5.0,
+  "pronunciationScore": 6.0,
+  "strengths": ["Quoted strength 1", "Quoted strength 2"],
+  "weaknesses": ["Specific weakness observed"],
   "corrections": [
     {
-      "original": "phrase with mistake",
-      "correction": "improved phrase",
-      "explanation": "helpful teacher explanation"
+      "original": "exact spoken phrase",
+      "correction": "grammatically natural version",
+      "explanation": "concise grammar rule explanation"
     }
   ],
-  "betterPhrasing": "A natural, fluent version of what they said.",
-  "fluencyScore": 7.0,
-  "coachingAdvice": "1-2 sentences of encouraging advice for their next attempt."
+  "betterPhrasing": "Band 8.5 model phrasing of their idea",
+  "coachingAdvice": "Actionable teacher tip for their next recording"
 }`;
 
   try {
@@ -452,21 +490,18 @@ Respond ONLY with valid JSON:
     });
 
     const parsed = JSON.parse(response.text || '{}');
-    return {
-      strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['Good clear articulation'],
-      corrections: Array.isArray(parsed.corrections) ? parsed.corrections : [],
-      betterPhrasing: parsed.betterPhrasing || drill.modelAnswer,
-      fluencyScore: normalizeBandScore(Number(parsed.fluencyScore) || 6.5),
-      coachingAdvice: parsed.coachingAdvice || 'Keep focusing on natural rhythm and varied sentence starters!',
-    };
+    return reconcilePracticeFeedback(parsed, candidateResponse, drill.focusSkill);
   } catch (err) {
     console.warn('[SpeakBand Gemini] Practice evaluation fallback:', err);
-    return {
-      strengths: ['Great effort maintaining continuity throughout the exercise!'],
-      corrections: [],
-      betterPhrasing: drill.modelAnswer,
-      fluencyScore: 6.5,
-      coachingAdvice: 'Great practice turn! Review the target collocations and try recording one more time.',
-    };
+    return reconcilePracticeFeedback(
+      {
+        strengths: ['Clear effort to communicate ideas directly.'],
+        corrections: [],
+        betterPhrasing: drill.modelAnswer,
+        coachingAdvice: 'Review target collocations and practice past tense consistency on your next attempt.',
+      },
+      candidateResponse,
+      drill.focusSkill
+    );
   }
 }

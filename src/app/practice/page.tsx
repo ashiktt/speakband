@@ -27,6 +27,7 @@ import { SpeechRecognitionManager } from '@/lib/speech/stt';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { DisclaimerBanner } from '@/components/DisclaimerBanner';
 import { CircularScoreRing } from '@/components/CircularScoreRing';
+import { reconcilePracticeFeedback } from '@/lib/scoringEngine';
 
 interface DrillConfig {
   type: DrillType;
@@ -275,25 +276,13 @@ function PracticeContent() {
       }
     } catch (err: any) {
       console.error('[SpeakBand Practice] Evaluation error:', err);
-      // Construct realistic fallback feedback matching Screen 4 layout
-      setFeedback({
-        fluencyScore: 7.0,
-        strengths: [
-          'Good use of linking words and cohesive devices.',
-          'Try to improve vocabulary variety in descriptive sentences.',
-          'Pronunciation of some multisyllabic words can be clearer.',
-        ],
-        corrections: [
-          {
-            original: 'I go there last year',
-            correction: 'I went there last year',
-            explanation: 'Use the past simple tense for completed past events.',
-          },
-        ],
-        betterPhrasing:
-          'During an unexpected detour on a mountain excursion, our transport encountered severe technical delays, necessitating prompt improvisation.',
-        coachingAdvice: 'Focus on maintaining steady rhythm and expanding your idiomatic lexicon.',
-      });
+      // Construct evidence-based fallback feedback directly from candidate response
+      const fallbackFeedback = reconcilePracticeFeedback(
+        {},
+        finalTranscript,
+        activeDrill?.focusSkill || 'Lexical Resource'
+      );
+      setFeedback(fallbackFeedback);
     } finally {
       setIsEvaluating(false);
       setMicState('IDLE');
@@ -304,6 +293,8 @@ function PracticeContent() {
   // SCREEN 4: RESULTS / FEEDBACK VIEW
   // =========================================================================
   if (feedback && activeDrill) {
+    const practiceBand = feedback.practiceBandEstimate ?? feedback.fluencyScore ?? 6.0;
+
     return (
       <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
         {/* Top Header: Back Link */}
@@ -314,14 +305,14 @@ function PracticeContent() {
             className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer transition"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Results / Feedback ({activeDrill.title})</span>
+            <span>Practice Drills ({activeDrill.title})</span>
           </button>
 
           <Link
             href="/test"
             className="text-xs font-bold text-[#7C3AED] dark:text-purple-400 hover:underline"
           >
-            Take Full Test →
+            Take Full Exam →
           </Link>
         </div>
 
@@ -329,20 +320,27 @@ function PracticeContent() {
         <div className="bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
           {/* Title & Score Header */}
           <div className="text-center sm:text-left space-y-1">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              Your Speaking Feedback
-            </h1>
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Estimated Band
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+                Practice Drill Feedback
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 font-bold text-[10px] uppercase tracking-wider border border-purple-200 dark:border-purple-800">
+                Practice Band Estimate
+              </span>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-baseline gap-2">
+            <div className="text-[11px] font-semibold text-slate-400">
+              Single-drill evaluation • Not an official IELTS exam result
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 pt-1">
               <span className="font-mono text-4xl sm:text-5xl font-black text-slate-900 dark:text-white">
-                {feedback.fluencyScore ? feedback.fluencyScore.toFixed(1) : '7.0'}
+                {practiceBand.toFixed(1)}
               </span>
               <span className="text-xs font-semibold text-[#7C3AED] dark:text-purple-300">
-                {feedback.fluencyScore >= 7.5
-                  ? 'Outstanding work! Ready for advanced IELTS bands.'
-                  : 'Good effort! Keep practicing to reach 7.5+'}
+                {practiceBand >= 7.5
+                  ? 'Demonstrated strong grammatical control and natural fluency.'
+                  : practiceBand >= 6.0
+                  ? 'Competent effort. Focus on targeted corrections below.'
+                  : 'Identified key priority areas to refine on your next attempt.'}
               </span>
             </div>
           </div>
@@ -350,23 +348,66 @@ function PracticeContent() {
           {/* 4 Circular Score Indicators in a Row (Matching Mockup Screen 4) */}
           <div className="p-4 sm:p-6 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/40">
             <div className="grid grid-cols-4 gap-2 sm:gap-4 items-center justify-items-center">
-              <CircularScoreRing label="Fluency" score={feedback.fluencyScore || 7.0} />
+              <CircularScoreRing label="Fluency" score={feedback.fluencyScore ?? 6.0} />
               <CircularScoreRing
                 label="Lexical Resource"
-                score={Math.max((feedback.fluencyScore || 7.0) - 0.5, 5.5)}
+                score={feedback.lexicalScore ?? 6.0}
               />
-              <CircularScoreRing label="Grammar" score={feedback.fluencyScore || 7.0} />
+              <CircularScoreRing label="Grammar" score={feedback.grammarScore ?? 6.0} />
               <CircularScoreRing
                 label="Pronunciation"
-                score={Math.max((feedback.fluencyScore || 7.0) - 0.5, 6.0)}
+                score={feedback.pronunciationScore ?? 6.0}
               />
             </div>
           </div>
 
+          {/* Why you received this score (Evidence Breakdown) */}
+          {feedback.criterionEvidence && (
+            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Why you received this score
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
+                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                    Fluency & Coherence — {feedback.fluencyScore?.toFixed(1) ?? '6.0'}
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                    {feedback.criterionEvidence.fluency[0]}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
+                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                    Lexical Resource — {feedback.lexicalScore?.toFixed(1) ?? '6.0'}
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                    {feedback.criterionEvidence.lexical[0]}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
+                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                    Grammar — {feedback.grammarScore?.toFixed(1) ?? '6.0'}
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                    {feedback.criterionEvidence.grammar[0]}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
+                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                    Pronunciation — {feedback.pronunciationScore?.toFixed(1) ?? '6.0'}
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                    {feedback.criterionEvidence.pronunciation[0]}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* AI Feedback Section (Matching Mockup Screen 4) */}
           <div className="bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 space-y-3">
             <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-              AI Feedback
+              Observed Strengths
             </h2>
             <ul className="space-y-2 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
               {feedback.strengths.map((s, idx) => (
@@ -380,11 +421,29 @@ function PracticeContent() {
             </ul>
           </div>
 
+          {/* Key Priority Areas / Weaknesses if present */}
+          {feedback.weaknesses && feedback.weaknesses.length > 0 && (
+            <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-5 space-y-2.5 text-xs">
+              <div className="font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5" />
+                Priority Areas for Next Attempt:
+              </div>
+              <ul className="space-y-1.5 text-slate-700 dark:text-slate-300">
+                {feedback.weaknesses.map((w, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                    <span>{w}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Grammar Corrections if present */}
           {feedback.corrections.length > 0 && (
             <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-5 space-y-2.5 text-xs">
               <div className="font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider text-[11px]">
-                Targeted Corrections:
+                Targeted Corrections (From Your Speech):
               </div>
               {feedback.corrections.map((c, i) => (
                 <div key={i} className="space-y-1">

@@ -59,6 +59,13 @@ export interface RecordedResponse {
   timestamp: number;
 }
 
+export interface BandCriteriaScores {
+  fluency: number;
+  lexical: number;
+  grammar: number;
+  pronunciation: number;
+}
+
 export interface IeltsEvidence {
   fluency: string[];
   lexical: string[];
@@ -101,6 +108,8 @@ export interface IeltsEvaluationResult {
   actualMistakes: GrammarCorrection[];
   answerReviews: AnswerReviewItem[];
   testDurationSeconds: number;
+  confidenceScore?: number;
+  isPracticeEstimate?: boolean;
 }
 
 export type DrillType =
@@ -124,11 +133,23 @@ export interface PracticeDrill {
 }
 
 export interface PracticeFeedback {
+  practiceBandEstimate: number;
+  fluencyScore: number;
+  lexicalScore: number;
+  grammarScore: number;
+  pronunciationScore: number;
   strengths: string[];
+  weaknesses?: string[];
   corrections: GrammarCorrection[];
   betterPhrasing: string;
-  fluencyScore: number;
   coachingAdvice: string;
+  criterionEvidence?: {
+    fluency: string[];
+    lexical: string[];
+    grammar: string[];
+    pronunciation: string[];
+  };
+  confidence?: number;
 }
 
 export interface ActiveTestSession {
