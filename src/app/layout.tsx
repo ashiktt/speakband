@@ -56,9 +56,9 @@ export default function RootLayout({
                   </a>
                 </div>
                 <div className="flex items-center gap-4 sm:gap-6 font-medium">
-                  <span>IELTS Band Scale (0–9)</span>
-                  <span>Controlled Exam Engine</span>
-                  <span>Acoustic Audio Analysis</span>
+                  <span>AI-Estimated Band Scores (0–9)</span>
+                  <span>IELTS-structured exam simulation</span>
+                  <span>AI speech analysis</span>
                 </div>
               </div>
             </div>

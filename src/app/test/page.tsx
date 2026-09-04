@@ -34,6 +34,7 @@ import {
   Send,
   Play,
 } from 'lucide-react';
+import { MicrophoneCheck } from '@/components/MicrophoneCheck';
 
 export default function ExaminationRoom() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function ExaminationRoom() {
   // Core examination state machine
   const [stateMachine, setStateMachine] = useState<ExaminationStateMachine | null>(null);
   const [testState, setTestState] = useState<TestState>('IDLE');
+  const [showMicCheck, setShowMicCheck] = useState<boolean>(false);
 
   // Question curriculum
   const [part1Questions, setPart1Questions] = useState<Part1Question[]>([]);
@@ -450,6 +452,17 @@ export default function ExaminationRoom() {
 
   // RENDER: IDLE (QuizTube Styled Setup Card)
   if (testState === 'IDLE') {
+    if (showMicCheck) {
+      return (
+        <div className="max-w-2xl mx-auto py-6 sm:py-10 animate-in fade-in duration-500">
+          <MicrophoneCheck
+            onVerified={handleStartExam}
+            onCancel={() => setShowMicCheck(false)}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-2xl mx-auto py-6 sm:py-10 animate-in fade-in duration-500">
         <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm sm:shadow-md space-y-6 transition-colors">
@@ -496,15 +509,15 @@ export default function ExaminationRoom() {
           <div className="pt-2 flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
             <button
               type="button"
-              onClick={handleStartExam}
-              className="w-full sm:w-auto flex-1 py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-sm tracking-wide shadow-lg shadow-purple-500/25 active:scale-[0.98] transition-all"
+              onClick={() => setShowMicCheck(true)}
+              className="w-full sm:w-auto flex-1 py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-sm tracking-wide shadow-lg shadow-purple-500/25 active:scale-[0.98] transition-all cursor-pointer"
             >
-              Begin Examination Now
+              Start Readiness & Mic Check
             </button>
             <button
               type="button"
               onClick={() => router.push('/')}
-              className="w-full sm:w-auto py-3.5 sm:py-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold border border-slate-200 dark:border-slate-700 transition"
+              className="w-full sm:w-auto py-3.5 sm:py-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold border border-slate-200 dark:border-slate-700 transition cursor-pointer"
             >
               Return to Dashboard
             </button>

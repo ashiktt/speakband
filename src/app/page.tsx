@@ -1,4 +1,4 @@
-﻿// SpeakBand — Home Dashboard (Matching Mockup Screen 1)
+// SpeakBand — Home Dashboard (Matching Mockup Screen 1)
 
 'use client';
 
@@ -25,7 +25,7 @@ import { TestHistorySummary } from '@/types/ielts';
 export default function HomeDashboard() {
   const [currentBand, setCurrentBand] = useState<number | null>(null);
   const [targetBand, setTargetBand] = useState<number>(7.5);
-  const [weakestSkill, setWeakestSkill] = useState<string>('Lexical Resource');
+  const [weakestSkill, setWeakestSkill] = useState<string | null>(null);
   const [testHistory, setTestHistory] = useState<TestHistorySummary[]>([]);
   const [isEditingTarget, setIsEditingTarget] = useState(false);
 
@@ -88,8 +88,8 @@ export default function HomeDashboard() {
                 href="/practice"
                 className="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 text-[#7C3AED] dark:text-purple-300 font-bold text-xs sm:text-sm border border-purple-200 dark:border-purple-800 transition-all active:scale-98"
               >
-                <Mic className="w-4 h-4 text-[#7C3AED] dark:text-purple-400" />
-                <span>Practice Speaking</span>
+                <Sparkles className="w-4 h-4 text-[#7C3AED] dark:text-purple-400" />
+                <span>Practice Mode (Skill Drills)</span>
               </Link>
             </div>
           </div>
@@ -195,27 +195,55 @@ export default function HomeDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
           {/* Weakest Skill Recommendation Card */}
           <div className="lg:col-span-1 bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800/60 rounded-3xl p-6 shadow-xs flex flex-col justify-between transition-colors">
-            <div>
-              <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider text-[#7C3AED] dark:text-purple-300 bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-2.5 py-0.5 rounded-full mb-3">
-                Focus Area
-              </span>
-              <div className="text-2xl font-bold text-[#7C3AED] dark:text-purple-300">
-                {weakestSkill}
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                Targeted speaking drills designed specifically to elevate this criterion based on your actual speech patterns.
-              </p>
-            </div>
+            {weakestSkill ? (
+              <>
+                <div>
+                  <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider text-[#7C3AED] dark:text-purple-300 bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-2.5 py-0.5 rounded-full mb-3">
+                    Focus Area
+                  </span>
+                  <div className="text-2xl font-bold text-[#7C3AED] dark:text-purple-300">
+                    {weakestSkill}
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                    Targeted speaking drills designed specifically to elevate this criterion based on your recorded performance.
+                  </p>
+                </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <Link
-                href={`/practice?skill=${encodeURIComponent(weakestSkill)}`}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/20 active:scale-98 transition-all"
-              >
-                <span>Practice Now</span>
-                <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
+                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <Link
+                    href={`/practice?skill=${encodeURIComponent(weakestSkill)}`}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/20 active:scale-98 transition-all"
+                  >
+                    <span>Practice Focus Area</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded-full mb-3">
+                    Baseline Needed
+                  </span>
+                  <div className="text-xl font-bold text-slate-900 dark:text-white">
+                    Discover Your Priority Area
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                    Complete your first simulated speaking test to diagnose your priority area across Fluency, Lexical Resource, Grammar, and Pronunciation.
+                  </p>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <Link
+                    href="/test"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/20 active:scale-98 transition-all"
+                  >
+                    <span>Take Baseline Test</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Quick Part Practice Actions */}
@@ -275,7 +303,7 @@ export default function HomeDashboard() {
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>Rule-based examination engine.</span>
+              <span>IELTS-structured exam simulation</span>
               <Link
                 href="/practice"
                 className="text-[#7C3AED] dark:text-purple-400 font-semibold hover:underline flex items-center gap-1"
@@ -286,6 +314,87 @@ export default function HomeDashboard() {
           </div>
         </div>
       </section>
+
+      {/* 5-Step IELTS Preparation Roadmap for New Users */}
+      {testHistory.length === 0 && (
+        <section className="bg-gradient-to-br from-purple-50/70 via-white to-pink-50/40 dark:from-slate-900 dark:via-purple-950/20 dark:to-slate-900 border border-purple-200/80 dark:border-purple-800/60 rounded-3xl p-6 sm:p-8 shadow-xs space-y-5 transition-colors">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="inline-block px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 font-bold text-[10px] uppercase tracking-wider mb-2">
+                Your Roadmap to Band 7.5+
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+                5-Step IELTS Speaking Mastery
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+                How SpeakBand evaluates your performance and coaches you to score higher.
+              </p>
+            </div>
+
+            <Link
+              href="/test"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white font-bold text-xs shadow-sm hover:opacity-95 transition shrink-0"
+            >
+              <span>Step 1: Start Baseline</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-2">
+            {[
+              {
+                step: '01',
+                title: 'Baseline Test',
+                desc: 'Full 11–14 min IELTS simulation covering Parts 1, 2, and 3.',
+                active: true,
+              },
+              {
+                step: '02',
+                title: 'AI Scoring',
+                desc: 'Official criteria scoring across Fluency, Lexical, Grammar, and Pronunciation.',
+                active: false,
+              },
+              {
+                step: '03',
+                title: 'Identify Gaps',
+                desc: 'Discover your exact weakest criterion based on spoken transcripts.',
+                active: false,
+              },
+              {
+                step: '04',
+                title: 'Targeted Drills',
+                desc: 'Practice bite-sized exercises with instant feedback & model Band 8.5+ phrasing.',
+                active: false,
+              },
+              {
+                step: '05',
+                title: 'Track & Retest',
+                desc: 'Measure improvements, monitor trajectory, and hit your target band.',
+                active: false,
+              },
+            ].map((s) => (
+              <div
+                key={s.step}
+                className={`p-4 rounded-2xl border transition-all ${
+                  s.active
+                    ? 'bg-white dark:bg-slate-950 border-purple-300 dark:border-purple-700 shadow-xs'
+                    : 'bg-white/60 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800'
+                }`}
+              >
+                <div className="font-mono text-xs font-black text-[#7C3AED] dark:text-purple-400">
+                  {s.step}
+                </div>
+                <div className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm mt-1">
+                  {s.title}
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                  {s.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Recent Test History */}
       <section className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xs transition-colors">

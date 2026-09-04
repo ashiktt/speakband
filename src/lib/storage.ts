@@ -88,19 +88,32 @@ export const StorageService = {
     const localTests = StorageService.getLocalTests();
 
     const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        const user = userId || (await supabase.auth.getUser()).data.user?.id;
-        if (user) {
+    if (!supabase) {
+      return localTests;
+    }
+
+    try {
+      const fetchPromise = (async () => {
+        try {
+          const authData = await supabase.auth.getUser();
+          const user = userId || authData.data?.user?.id;
+          if (!user) return localTests;
+
           const { data, error } = await supabase
             .from('ielts_tests')
             .select('evaluation_data')
             .eq('user_id', user)
             .order('created_at', { ascending: false });
 
+          if (error) {
+            console.warn('[SpeakBand Storage] Supabase query notice:', error.message);
+            return localTests;
+          }
+
           if (data && data.length > 0) {
-            const cloudTests = data.map((d: any) => d.evaluation_data as IeltsEvaluationResult);
-            // Merge unique tests
+            const cloudTests = data
+              .map((d: any) => d.evaluation_data as IeltsEvaluationResult)
+              .filter(Boolean);
             const combinedMap = new Map<string, IeltsEvaluationResult>();
             cloudTests.forEach((t) => combinedMap.set(t.id, t));
             localTests.forEach((t) => combinedMap.set(t.id, t));
@@ -108,19 +121,29 @@ export const StorageService = {
               (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
             );
 
-            // Update local cache
             if (typeof window !== 'undefined') {
-              localStorage.setItem(TESTS_STORAGE_KEY, JSON.stringify(merged));
+              try {
+                localStorage.setItem(TESTS_STORAGE_KEY, JSON.stringify(merged));
+              } catch (e) {}
             }
             return merged;
           }
+          return localTests;
+        } catch (err) {
+          console.warn('[SpeakBand Storage] Supabase fetch error:', err);
+          return localTests;
         }
-      } catch (e) {
-        console.warn('[SpeakBand Storage] Supabase load notice:', e);
-      }
-    }
+      })();
 
-    return localTests;
+      const timeoutPromise = new Promise<IeltsEvaluationResult[]>((resolve) =>
+        setTimeout(() => resolve(localTests), 3500)
+      );
+
+      return await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (e) {
+      console.warn('[SpeakBand Storage] getAllTests notice:', e);
+      return localTests;
+    }
   },
 
   getLocalTests(): IeltsEvaluationResult[] {
@@ -156,10 +179,10 @@ export const StorageService = {
     return tests[0].overallBand;
   },
 
-  getWeakestSkill(): string {
+  getWeakestSkill(): string | null {
     const tests = StorageService.getLocalTests();
-    if (tests.length === 0) return 'Lexical Resource';
-    return tests[0].weakestArea.split('(')[0].trim() || 'Lexical Resource';
+    if (tests.length === 0) return null;
+    return tests[0].weakestArea.split('(')[0].trim() || null;
   },
 
   getTargetBand(): number {

@@ -1,4 +1,4 @@
-﻿// SpeakBand — QuizTube Navigation Bar matching exact visual mockup
+// SpeakBand — QuizTube Navigation Bar matching exact visual mockup
 
 'use client';
 
@@ -54,12 +54,17 @@ export const Header: React.FC = () => {
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-[#7C3AED] to-[#EC4899] text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-105 transition-transform duration-200">
               <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-white tracking-wider">
-                SPEAKBAND
-              </span>
-              <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-[#7C3AED] text-white rounded-md shadow-xs">
-                IELTS
+            <div className="flex flex-col justify-center">
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-white tracking-tight leading-none">
+                  SpeakBand
+                </span>
+                <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-md leading-none">
+                  IELTS
+                </span>
+              </div>
+              <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 tracking-normal hidden sm:inline-block mt-0.5 leading-none">
+                IELTS Speaking Coach
               </span>
             </div>
           </Link>

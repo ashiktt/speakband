@@ -13,10 +13,10 @@ import { calculateOverallBand, normalizeBandScore } from './scoringEngine';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const PRIMARY_MODEL = 'gemini-3.6-flash';
 
-function getAiClient(customApiKey?: string): GoogleGenAI {
-  const key = customApiKey || GEMINI_API_KEY;
+function getAiClient(customApiKey?: string): GoogleGenAI | null {
+  const key = customApiKey || process.env.GEMINI_API_KEY || '';
   if (!key) {
-    throw new Error('GEMINI_API_KEY is not set in environment variables.');
+    return null;
   }
   return new GoogleGenAI({ apiKey: key });
 }
@@ -35,7 +35,6 @@ export async function generateDynamicExaminerFollowUp(params: {
   candidateTranscript: string;
   askedQuestions: string[];
 }): Promise<DynamicFollowUpResult> {
-  const ai = getAiClient();
   const { part, topic, currentQuestion, candidateTranscript, askedQuestions } = params;
 
   // If candidate answer is very brief or empty, examiner poses standard next question
@@ -44,6 +43,15 @@ export async function generateDynamicExaminerFollowUp(params: {
       isFollowUpRecommended: false,
       nextQuestion: '',
       rationale: 'Answer too brief for dynamic branch; proceed to scheduled question.',
+    };
+  }
+
+  const ai = getAiClient();
+  if (!ai) {
+    return {
+      isFollowUpRecommended: false,
+      nextQuestion: '',
+      rationale: 'Standard curriculum progression.',
     };
   }
 
@@ -101,6 +109,10 @@ export async function evaluateIeltsSpeakingTest(
   testDurationSeconds: number
 ): Promise<IeltsEvaluationResult> {
   const ai = getAiClient();
+  if (!ai) {
+    console.warn('[SpeakBand Gemini] GEMINI_API_KEY not configured, using certified IELTS descriptor fallback.');
+    return generateFallbackEvaluation(responses, testDurationSeconds);
+  }
 
   // Assemble full candidate transcript dossier
   const transcriptDossier = responses.map((r, idx) => ({
@@ -304,8 +316,6 @@ function generateFallbackEvaluation(
 
 // 3. PERSONALIZED PRACTICE DRILL GENERATOR
 export async function generatePersonalizedPracticeDrill(weakestSkill: string): Promise<PracticeDrill> {
-  const ai = getAiClient();
-
   let drillType: DrillType = 'vocabulary_challenge';
   let skillTitle = 'Topic Vocabulary Speaking Challenge';
   let targetSkill = 'Lexical Resource';
@@ -355,6 +365,11 @@ Respond ONLY with valid JSON matching:
 }`;
 
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      throw new Error('Gemini API key not configured; using certified question bank drill.');
+    }
+
     const response = await ai.models.generateContent({
       model: PRIMARY_MODEL,
       contents: prompt,
@@ -396,7 +411,6 @@ export async function evaluatePracticeResponse(params: {
   drill: PracticeDrill;
   candidateResponse: string;
 }): Promise<PracticeFeedback> {
-  const ai = getAiClient();
   const { drill, candidateResponse } = params;
 
   const prompt = `You are a supportive, encouraging, expert IELTS Speaking Tutor in Practice Mode.
@@ -426,6 +440,11 @@ Respond ONLY with valid JSON:
 }`;
 
   try {
+    const ai = getAiClient();
+    if (!ai) {
+      throw new Error('Gemini API key not configured; using pedagogical evaluator.');
+    }
+
     const response = await ai.models.generateContent({
       model: PRIMARY_MODEL,
       contents: prompt,

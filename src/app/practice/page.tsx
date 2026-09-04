@@ -145,12 +145,18 @@ function PracticeContent() {
     setErrorMessage(null);
     setIsLoadingDrill(true);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_drill', weakestSkill: drill.focusSkill }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       const data = await res.json();
       if (data.success && data.drill) {
         setCurrentDrillData(data.drill);
@@ -170,7 +176,7 @@ function PracticeContent() {
         });
       }
     } catch {
-      // Use fallback drill
+      // Use certified curriculum fallback drill
       setCurrentDrillData({
         id: 'drill-' + Date.now(),
         drillType: drill.type,
@@ -184,6 +190,7 @@ function PracticeContent() {
         modelAnswer: '',
       });
     } finally {
+      clearTimeout(timeoutId);
       setIsLoadingDrill(false);
     }
   };
@@ -244,6 +251,9 @@ function PracticeContent() {
       return;
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
@@ -253,7 +263,9 @@ function PracticeContent() {
           drill: currentDrillData,
           candidateResponse: finalTranscript,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const data = await res.json();
       if (data.success && data.feedback) {
@@ -581,8 +593,8 @@ function PracticeContent() {
           className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="font-extrabold tracking-wider">SPEAKBAND</span>
-          <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-[#7C3AED] text-white rounded-md">
+          <span className="font-extrabold tracking-tight text-slate-900 dark:text-white">SpeakBand</span>
+          <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-md">
             IELTS
           </span>
         </Link>
@@ -602,8 +614,21 @@ function PracticeContent() {
           Speaking Drills
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
-          AI-powered practice with instant feedback.
+          Targeted practice with instant AI coaching & Band 8.5+ model phrasings.
         </p>
+      </div>
+
+      {/* Distinction Banner: Practice Mode vs Full Test */}
+      <div className="p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 flex items-start gap-3 text-xs">
+        <Sparkles className="w-4 h-4 text-[#7C3AED] dark:text-purple-400 shrink-0 mt-0.5" />
+        <div className="text-slate-700 dark:text-slate-300 leading-relaxed">
+          <strong className="text-slate-900 dark:text-white">Practice Mode vs Full Test: </strong>
+          Practice individual IELTS criteria with immediate feedback and retry anytime. To take a complete, timed 11–14 min simulation under official test rules, use{' '}
+          <Link href="/test" className="text-[#7C3AED] dark:text-purple-400 font-bold hover:underline">
+            Full Exam Mode
+          </Link>
+          .
+        </div>
       </div>
 
       {/* 5 Drill Selection Cards in Vertical List (Matching Mockup Screen 2) */}
@@ -660,9 +685,43 @@ function PracticeContent() {
   );
 }
 
+function PracticeSkeleton() {
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className="h-4 w-28 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+        <div className="h-4 w-24 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+      </div>
+
+      <div className="space-y-2">
+        <div className="h-8 w-64 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+        <div className="h-4 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+      </div>
+
+      <div className="space-y-3">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className="w-full p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60" />
+              <div className="space-y-1.5">
+                <div className="h-4 w-36 bg-slate-200 dark:bg-slate-800 rounded" />
+                <div className="h-3 w-52 bg-slate-100 dark:bg-slate-800/60 rounded" />
+              </div>
+            </div>
+            <div className="h-4 w-8 bg-slate-200 dark:bg-slate-800 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PracticeModePage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading coaching mode...</div>}>
+    <Suspense fallback={<PracticeSkeleton />}>
       <PracticeContent />
     </Suspense>
   );
