@@ -5,6 +5,7 @@ import './globals.css';
 import { Header } from '@/components/Header';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { DisclaimerBanner } from '@/components/DisclaimerBanner';
+import { ExternalLink } from 'lucide-react';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -41,7 +42,19 @@ export default function RootLayout({
             <div className="max-w-7xl mx-auto space-y-4">
               <DisclaimerBanner />
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400 pt-4 border-t border-slate-200/80 dark:border-slate-800/80">
-                <p>© {new Date().getFullYear()} SpeakBand. Built for IELTS candidates worldwide.</p>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                  <span>© {new Date().getFullYear()} SpeakBand. Crafted with care by</span>
+                  <a
+                    href="https://personal-portfolio-blue-eight-9p8guawbf5.vercel.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-90 text-white font-bold text-xs shadow-xs shadow-purple-500/25 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                    title="View Ashikur's Portfolio"
+                  >
+                    <span>Ashikur</span>
+                    <ExternalLink className="w-3 h-3 stroke-[2.5]" />
+                  </a>
+                </div>
                 <div className="flex items-center gap-4 sm:gap-6 font-medium">
                   <span>IELTS Band Scale (0–9)</span>
                   <span>Controlled Exam Engine</span>
