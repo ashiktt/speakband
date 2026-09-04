@@ -201,4 +201,62 @@ export const StorageService = {
       localStorage.setItem('speakband_target_band', band.toString());
     } catch (e) {}
   },
+
+  getRecentlyUsedQuestionIds(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem('speakband_recent_question_ids');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  addRecentlyUsedQuestionIds(ids: string[]): void {
+    if (typeof window === 'undefined' || !ids || ids.length === 0) return;
+    try {
+      const existing = StorageService.getRecentlyUsedQuestionIds();
+      // Keep up to the 40 most recent unique question IDs
+      const combined = [...ids, ...existing.filter((id) => !ids.includes(id))].slice(0, 40);
+      localStorage.setItem('speakband_recent_question_ids', JSON.stringify(combined));
+    } catch (e) {}
+  },
+
+  getRecentlyUsedTopics(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem('speakband_recent_topics');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  addRecentlyUsedTopics(topics: string[]): void {
+    if (typeof window === 'undefined' || !topics || topics.length === 0) return;
+    try {
+      const existing = StorageService.getRecentlyUsedTopics();
+      const combined = [...topics, ...existing.filter((t) => !topics.includes(t))].slice(0, 10);
+      localStorage.setItem('speakband_recent_topics', JSON.stringify(combined));
+    } catch (e) {}
+  },
+
+  getRecentlyUsedCueCardIds(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem('speakband_recent_cue_cards');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  addRecentlyUsedCueCardIds(ids: string[]): void {
+    if (typeof window === 'undefined' || !ids || ids.length === 0) return;
+    try {
+      const existing = StorageService.getRecentlyUsedCueCardIds();
+      const combined = [...ids, ...existing.filter((id) => !ids.includes(id))].slice(0, 8);
+      localStorage.setItem('speakband_recent_cue_cards', JSON.stringify(combined));
+    } catch (e) {}
+  },
 };

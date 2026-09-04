@@ -13,7 +13,7 @@ import {
   RecordedResponse,
 } from '@/types/ielts';
 import { ExaminationStateMachine, STATE_LABELS } from '@/lib/stateMachine';
-import { getPart1Curriculum, getRandomCueCard } from '@/lib/questionBank';
+import { getPart1TestCurriculum, getPart2AndPart3Curriculum } from '@/lib/questionBank';
 import { createTimestampTimer, formatTime, TimerInstance } from '@/lib/timerEngine';
 import { SpeechRecognitionManager } from '@/lib/speech/stt';
 import { SpeechSynthesisManager } from '@/lib/speech/tts';
@@ -104,10 +104,19 @@ export default function ExaminationRoom() {
     sttRef.current = new SpeechRecognitionManager();
     ttsRef.current = new SpeechSynthesisManager();
 
-    const p1 = getPart1Curriculum('studies');
+    const recentQIds = StorageService.getRecentlyUsedQuestionIds();
+    const recentTopics = StorageService.getRecentlyUsedTopics();
+    const recentCues = StorageService.getRecentlyUsedCueCardIds();
+
+    const p1 = getPart1TestCurriculum({
+      recentlyUsedQuestionIds: recentQIds,
+      recentlyUsedTopics: recentTopics,
+    });
     setPart1Questions(p1.questions);
 
-    const p2p3 = getRandomCueCard();
+    const p2p3 = getPart2AndPart3Curriculum({
+      recentlyUsedCueCardIds: recentCues,
+    });
     setActiveCueCard(p2p3.cueCard);
     setPart3Questions(p2p3.part3Questions);
     sm.setCueCard(p2p3.cueCard);
@@ -262,8 +271,9 @@ export default function ExaminationRoom() {
       stateMachine.transition('PART_1');
       setTestState('PART_1');
 
-      const firstPart1 = part1Questions[0]?.question || 'What do you enjoy most about your studies?';
-      const speech = `Thank you. Now, in this first part, I would like to ask you some questions about yourself. Let's talk about ${part1Questions[0]?.topic || 'studies'}. ${firstPart1}`;
+      const firstPart1 = part1Questions[0]?.question || 'Where is your hometown located?';
+      const firstTopicName = (part1Questions[0]?.topic || 'your background').replace(/_/g, ' ');
+      const speech = `Thank you. Now, in this first part, I would like to ask you some questions about yourself. Let's talk about ${firstTopicName}. ${firstPart1}`;
       speakExaminer(speech);
       return;
     }
@@ -286,8 +296,9 @@ export default function ExaminationRoom() {
       setCurrentPart1Index(nextIndex);
       const nextQ = part1Questions[nextIndex];
       const prevTopic = part1Questions[currentPart1Index]?.topic;
+      const cleanNextTopic = (nextQ.topic || '').replace(/_/g, ' ');
       const topicTransition =
-        nextQ.topic !== prevTopic ? `Thank you. Let's move on to discuss ${nextQ.topic}. ` : 'Thank you. ';
+        nextQ.topic !== prevTopic ? `Thank you. Let's move on to discuss ${cleanNextTopic}. ` : 'Thank you. ';
 
       speakExaminer(`${topicTransition}${nextQ.question}`);
       return;
@@ -432,6 +443,15 @@ export default function ExaminationRoom() {
       }
 
       await StorageService.saveTestResult(data.evaluation);
+
+      // Record recently asked question IDs, topics, and cue card to prevent immediate repetition across sessions
+      const askedQIds = part1Questions.map((q) => q.id);
+      StorageService.addRecentlyUsedQuestionIds(askedQIds);
+      StorageService.addRecentlyUsedTopics(part1Questions.map((q) => q.topic));
+      if (activeCueCard) {
+        StorageService.addRecentlyUsedCueCardIds([activeCueCard.id]);
+      }
+
       ExaminationStateMachine.clearPersistedSession();
       router.push(`/results/${data.evaluation.id}`);
     } catch (err: any) {

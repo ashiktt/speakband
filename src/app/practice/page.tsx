@@ -28,6 +28,8 @@ import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { DisclaimerBanner } from '@/components/DisclaimerBanner';
 import { CircularScoreRing } from '@/components/CircularScoreRing';
 import { reconcilePracticeFeedback } from '@/lib/scoringEngine';
+import { PracticeSessionMemory } from '@/lib/practiceCoach';
+import { getUnusedPracticeQuestion, PART_1_TOPICS, Part1TopicName } from '@/lib/questionBank';
 
 interface DrillConfig {
   type: DrillType;
@@ -102,7 +104,9 @@ function PracticeContent() {
   // Mode: 'selection' (Screen 2) | 'challenge' (Screen 3) | 'feedback' (Screen 4)
   const [activeDrill, setActiveDrill] = useState<DrillConfig | null>(null);
   const [currentDrillData, setCurrentDrillData] = useState<PracticeDrill | null>(null);
+  const [sessionMemory, setSessionMemory] = useState<PracticeSessionMemory | null>(null);
   const [isLoadingDrill, setIsLoadingDrill] = useState(false);
+  const [isLoadingNext, setIsLoadingNext] = useState(false);
 
   // Spoken response state
   const [micState, setMicState] = useState<MicState>('IDLE');
@@ -147,13 +151,20 @@ function PracticeContent() {
     setIsLoadingDrill(true);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const recentlyUsedTopics = StorageService.getRecentlyUsedTopics();
 
     try {
       const res = await fetch('/api/coaching/practice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_drill', weakestSkill: drill.focusSkill }),
+        body: JSON.stringify({
+          action: 'get_drill',
+          weakestSkill: drill.focusSkill,
+          focusSkill: drill.focusSkill,
+          drillType: drill.type,
+          recentlyUsedTopics,
+        }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -161,38 +172,157 @@ function PracticeContent() {
       const data = await res.json();
       if (data.success && data.drill) {
         setCurrentDrillData(data.drill);
+        if (data.memory) {
+          setSessionMemory(data.memory);
+          if (data.memory.currentTopic) {
+            StorageService.addRecentlyUsedTopics([data.memory.currentTopic]);
+          }
+        }
       } else {
-        // Fallback to sample data for this drill
+        // Fallback using dynamic question from questionBank
+        const availableTopics = PART_1_TOPICS.filter((t) => !recentlyUsedTopics.includes(t));
+        const selectedTopic = (availableTopics.length > 0 ? availableTopics[0] : 'free_time') as Part1TopicName;
+        const dynamicFallback = getUnusedPracticeQuestion(selectedTopic, []);
+
         setCurrentDrillData({
-          id: 'drill-' + Date.now(),
+          id: dynamicFallback.id,
           drillType: drill.type,
           focusSkill: drill.focusSkill,
           title: drill.title === '2-Min Fluency' ? '2-Minute Fluency & Continuity Challenge' : drill.title + ' Challenge',
           description: drill.subtitle,
           instructions: drill.subtitle,
-          prompt: drill.samplePrompt,
+          prompt: dynamicFallback.question,
           timeLimitSeconds: drill.timeSeconds,
           targetCollocations: drill.sampleTips,
           modelAnswer: '',
         });
+        setSessionMemory({
+          currentTopic: selectedTopic,
+          topicQuestionCount: 1,
+          askedQuestions: [dynamicFallback.question],
+          recentTopics: recentlyUsedTopics,
+          conversationHistory: [{ role: 'coach', text: dynamicFallback.question, topic: selectedTopic }],
+        });
       }
     } catch {
-      // Use certified curriculum fallback drill
+      // Use dynamic question from questionBank
+      const availableTopics = PART_1_TOPICS.filter((t) => !recentlyUsedTopics.includes(t));
+      const selectedTopic = (availableTopics.length > 0 ? availableTopics[0] : 'free_time') as Part1TopicName;
+      const dynamicFallback = getUnusedPracticeQuestion(selectedTopic, []);
+
       setCurrentDrillData({
-        id: 'drill-' + Date.now(),
+        id: dynamicFallback.id,
         drillType: drill.type,
         focusSkill: drill.focusSkill,
         title: drill.title === '2-Min Fluency' ? '2-Minute Fluency & Continuity Challenge' : drill.title + ' Challenge',
         description: drill.subtitle,
         instructions: drill.subtitle,
-        prompt: drill.samplePrompt,
+        prompt: dynamicFallback.question,
         timeLimitSeconds: drill.timeSeconds,
         targetCollocations: drill.sampleTips,
         modelAnswer: '',
       });
+      setSessionMemory({
+        currentTopic: selectedTopic,
+        topicQuestionCount: 1,
+        askedQuestions: [dynamicFallback.question],
+        recentTopics: recentlyUsedTopics,
+        conversationHistory: [{ role: 'coach', text: dynamicFallback.question, topic: selectedTopic }],
+      });
     } finally {
       clearTimeout(timeoutId);
       setIsLoadingDrill(false);
+    }
+  };
+
+  const handleNextQuestion = async () => {
+    if (!activeDrill) return;
+
+    setIsLoadingNext(true);
+    setErrorMessage(null);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const recentlyUsedTopics = StorageService.getRecentlyUsedTopics();
+
+    try {
+      const res = await fetch('/api/coaching/practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'next_question',
+          memory: sessionMemory,
+          focusSkill: activeDrill.focusSkill,
+          drillType: activeDrill.type,
+          candidateResponse: candidateTranscript || undefined,
+          recentlyUsedTopics,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await res.json();
+      if (data.success && data.drill) {
+        setCurrentDrillData(data.drill);
+        if (data.memory) {
+          setSessionMemory(data.memory);
+          if (data.memory.currentTopic) {
+            StorageService.addRecentlyUsedTopics([data.memory.currentTopic]);
+          }
+        }
+        setFeedback(null);
+        setCandidateTranscript('');
+        setRecordingSeconds(0);
+        setMicState('IDLE');
+      } else {
+        throw new Error(data.error || 'Failed to load next question');
+      }
+    } catch (err) {
+      console.warn('[SpeakBand Practice] Fallback for next question:', err);
+      // Resilient fallback: rotate topic if topicQuestionCount >= 3 or pick next unused
+      const asked = sessionMemory?.askedQuestions || [];
+      const currentTopic = (sessionMemory?.currentTopic || 'free_time') as Part1TopicName;
+      const count = sessionMemory?.topicQuestionCount || 0;
+
+      let nextTopic = currentTopic;
+      let nextCount = count + 1;
+      if (count >= 3) {
+        const pool = PART_1_TOPICS.filter((t) => t !== currentTopic && !recentlyUsedTopics.includes(t));
+        nextTopic = (pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : 'hometown') as Part1TopicName;
+        nextCount = 1;
+      }
+
+      const fallback = getUnusedPracticeQuestion(nextTopic, asked);
+      setCurrentDrillData({
+        id: fallback.id,
+        drillType: activeDrill.type,
+        focusSkill: activeDrill.focusSkill,
+        title: activeDrill.title === '2-Min Fluency' ? '2-Minute Fluency & Continuity Challenge' : activeDrill.title + ' Challenge',
+        description: activeDrill.subtitle,
+        instructions: activeDrill.subtitle,
+        prompt: fallback.question,
+        timeLimitSeconds: activeDrill.timeSeconds,
+        targetCollocations: activeDrill.sampleTips,
+        modelAnswer: '',
+      });
+      setSessionMemory({
+        currentTopic: nextTopic,
+        topicQuestionCount: nextCount,
+        askedQuestions: [...asked, fallback.question],
+        recentTopics: Array.from(new Set([...recentlyUsedTopics, nextTopic])),
+        conversationHistory: [
+          ...(sessionMemory?.conversationHistory || []),
+          ...(candidateTranscript ? [{ role: 'student' as const, text: candidateTranscript }] : []),
+          { role: 'coach' as const, text: fallback.question, topic: nextTopic },
+        ],
+      });
+      setFeedback(null);
+      setCandidateTranscript('');
+      setRecordingSeconds(0);
+      setMicState('IDLE');
+    } finally {
+      clearTimeout(timeoutId);
+      setIsLoadingNext(false);
     }
   };
 
@@ -481,29 +611,59 @@ function PracticeContent() {
             </div>
           )}
 
-          {/* Bottom Action Buttons (Matching Mockup Screen 4) */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setFeedback(null);
-                setCandidateTranscript('');
-              }}
-              className="py-3 px-4 rounded-2xl bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-purple-300 dark:border-purple-700 text-[#7C3AED] dark:text-purple-300 font-bold text-xs sm:text-sm shadow-xs transition cursor-pointer text-center"
-            >
-              Try Again
-            </button>
+          {/* Bottom Action Buttons: Next Question (Primary) & Retry This Question (Secondary) */}
+          <div className="space-y-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFeedback(null);
+                  setCandidateTranscript('');
+                  setRecordingSeconds(0);
+                  setMicState('IDLE');
+                  setErrorMessage(null);
+                }}
+                disabled={isLoadingNext}
+                className="py-3 px-4 rounded-2xl bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-purple-300 dark:border-purple-700 text-[#7C3AED] dark:text-purple-300 font-bold text-xs sm:text-sm shadow-xs transition cursor-pointer text-center flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Retry This Question</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setFeedback(null);
-                setActiveDrill(null);
-              }}
-              className="py-3 px-4 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/25 transition cursor-pointer text-center"
-            >
-              Practice More
-            </button>
+              <button
+                type="button"
+                onClick={handleNextQuestion}
+                disabled={isLoadingNext}
+                className="py-3 px-4 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-500/25 transition cursor-pointer text-center flex items-center justify-center gap-2"
+              >
+                {isLoadingNext ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Loading next question...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Next Question</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setFeedback(null);
+                  setActiveDrill(null);
+                  setCandidateTranscript('');
+                  setSessionMemory(null);
+                }}
+                className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer transition"
+              >
+                ← Return to Drill Selection
+              </button>
+            </div>
           </div>
         </div>
 
@@ -542,9 +702,16 @@ function PracticeContent() {
         <div className="bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
           {/* Pill Badge & Headline */}
           <div className="space-y-2">
-            <span className="inline-block px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 font-bold text-[11px] uppercase tracking-wider">
-              {activeDrill.title}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-block px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-950/80 text-[#7C3AED] dark:text-purple-300 font-bold text-[11px] uppercase tracking-wider">
+                {activeDrill.title}
+              </span>
+              {sessionMemory?.currentTopic && (
+                <span className="inline-block px-2.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-[#7C3AED] dark:text-purple-300 font-bold text-[10px] uppercase tracking-wider border border-purple-200 dark:border-purple-800">
+                  Topic: {sessionMemory.currentTopic.replace(/_/g, ' ')} • Q{sessionMemory.topicQuestionCount}
+                </span>
+              )}
+            </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               {activeDrill.title === '2-Min Fluency'

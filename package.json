@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types scripts/test-scoring-engine.mjs",
-    "test:scoring": "node --experimental-strip-types scripts/test-scoring-engine.mjs"
+    "test": "node --experimental-strip-types scripts/test-scoring-engine.mjs && node --experimental-strip-types scripts/test-question-variation.mjs",
+    "test:scoring": "node --experimental-strip-types scripts/test-scoring-engine.mjs",
+    "test:variation": "node --experimental-strip-types scripts/test-question-variation.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",

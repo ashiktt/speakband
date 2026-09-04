@@ -1,16 +1,75 @@
 // SpeakBand — Personalized IELTS Coaching & Practice Drills Route Handler
 
 import { NextRequest, NextResponse } from 'next/server';
-import { generatePersonalizedPracticeDrill, evaluatePracticeResponse } from '@/lib/gemini';
+import { evaluatePracticeResponse } from '@/lib/gemini';
+import {
+  getNextPracticeQuestion,
+  initializePracticeSessionMemory,
+  PracticeSessionMemory,
+} from '@/lib/practiceCoach';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, weakestSkill = 'Lexical Resource', drill, candidateResponse } = body;
+    const {
+      action,
+      weakestSkill = 'Lexical Resource',
+      drill,
+      candidateResponse,
+      memory,
+      focusSkill = 'Fluency & Coherence',
+      drillType = 'fluency_challenge',
+      recentlyUsedTopics = [],
+    } = body;
 
     if (action === 'get_drill') {
-      const generatedDrill = await generatePersonalizedPracticeDrill(weakestSkill);
-      return NextResponse.json({ success: true, drill: generatedDrill });
+      const activeMemory: PracticeSessionMemory =
+        memory && memory.askedQuestions
+          ? memory
+          : initializePracticeSessionMemory({ recentTopics: recentlyUsedTopics });
+
+      const result = await getNextPracticeQuestion({
+        memory: activeMemory,
+        focusSkill: weakestSkill || focusSkill,
+        drillType,
+      });
+
+      return NextResponse.json({
+        success: true,
+        drill: result.drill,
+        memory: result.memory,
+        progressionType: result.progressionType,
+      });
+    }
+
+    if (action === 'next_question') {
+      let activeMemory: PracticeSessionMemory =
+        memory && memory.askedQuestions
+          ? memory
+          : initializePracticeSessionMemory({ recentTopics: recentlyUsedTopics });
+
+      if (candidateResponse && typeof candidateResponse === 'string') {
+        activeMemory = {
+          ...activeMemory,
+          conversationHistory: [
+            ...activeMemory.conversationHistory,
+            { role: 'student', text: candidateResponse.trim(), timestamp: Date.now() },
+          ],
+        };
+      }
+
+      const result = await getNextPracticeQuestion({
+        memory: activeMemory,
+        focusSkill,
+        drillType,
+      });
+
+      return NextResponse.json({
+        success: true,
+        drill: result.drill,
+        memory: result.memory,
+        progressionType: result.progressionType,
+      });
     }
 
     if (action === 'evaluate_drill') {
