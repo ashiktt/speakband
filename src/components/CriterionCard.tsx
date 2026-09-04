@@ -6,7 +6,7 @@ import { CheckCircle2, ChevronRight, Volume2 } from 'lucide-react';
 
 interface CriterionCardProps {
   name: string;
-  score: number;
+  score: number | null | undefined;
   description: string;
   evidence: string[];
   audioNote?: string;

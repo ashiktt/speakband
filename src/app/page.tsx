@@ -457,7 +457,7 @@ export default function HomeDashboard() {
                       <span>FC: {test.fluencyBand.toFixed(1)}</span>
                       <span>LR: {test.lexicalBand.toFixed(1)}</span>
                       <span>GRA: {test.grammarBand.toFixed(1)}</span>
-                      <span>P: {test.pronunciationBand.toFixed(1)}</span>
+                      <span>P: {test.pronunciationBand !== null ? test.pronunciationBand.toFixed(1) : '—'}</span>
                     </div>
                   </div>
                 </div>

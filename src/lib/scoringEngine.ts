@@ -18,7 +18,12 @@ import type {
  */
 export function calculateOverallBand(scores: BandCriteriaScores): number {
   const { fluency, lexical, grammar, pronunciation } = scores;
-  const rawMean = (fluency + lexical + grammar + pronunciation) / 4;
+  const values: number[] = [fluency, lexical, grammar];
+  if (typeof pronunciation === 'number' && !isNaN(pronunciation) && pronunciation !== null) {
+    values.push(pronunciation);
+  }
+  if (values.length === 0) return 0;
+  const rawMean = values.reduce((acc, v) => acc + v, 0) / values.length;
 
   const whole = Math.floor(rawMean);
   const frac = Number((rawMean - whole).toFixed(4));
@@ -33,10 +38,11 @@ export function calculateOverallBand(scores: BandCriteriaScores): number {
 }
 
 /**
- * Ensures any individual band score conforms to official 0-9 in 0.5 intervals
+ * Ensures any individual band score conforms to official 0-9 in 0.5 intervals.
+ * Returns null if score is missing or invalid — NEVER defaults to a fake score.
  */
-export function normalizeBandScore(score: number): number {
-  if (isNaN(score) || score === null || score === undefined) return 6.0;
+export function normalizeBandScore(score: number | null | undefined): number | null {
+  if (score === null || score === undefined || isNaN(score)) return null;
   const clamped = Math.max(0, Math.min(9, score));
   return Math.round(clamped * 2) / 2;
 }
@@ -148,6 +154,9 @@ export function auditGrammarQuality(
 
   // Scan for common systematic basic error patterns in spoken English
   const basicErrorPatterns = [
+    /\b(I|he|she|we|they|you)('m|\s+am|\s+is|\s+are)\s+(was|were)\b/i,
+    /\b(I|he|she|we|they|you)('m|\s+am|\s+is|\s+are)\s+(very\s+)?good\s+(English|Spanish|French|German)\b/i,
+    /\b(I|he|she|we|they|you)('m|\s+am)\s+(talk|speak|go|eat|play)\b/i,
     /\b(I|he|she|we|they)\s+go\s+(there|to|last|yesterday)/i,
     /\b(we|they|you)\s+was\b/i,
     /\b(he|she|it)\s+don't\b/i,
@@ -158,6 +167,9 @@ export function auditGrammarQuality(
     /\bI\s+(see|go|make|take|buy|eat|is)\s+.*(yesterday|last\s+(year|month|week))\b/i,
     /\bmore\s+better\b/i,
     /\bno\s+have\b/i,
+    /\bwas\s+(go|went|eat|ate)\b/i,
+    /\bmany\s+thing\b/i,
+    /\b(he|she|it)\s+(like|want|need)\b/i,
   ];
 
   let patternMatches = 0;
@@ -178,9 +190,12 @@ export function auditGrammarQuality(
       exp.includes('subject-verb') ||
       exp.includes('agreement') ||
       exp.includes('irregular verb') ||
+      exp.includes('auxiliary') ||
       orig.includes('go ') ||
       orig.includes('was ') ||
-      orig.includes('don\'t ')
+      orig.includes('don\'t ') ||
+      orig.includes('\'m was') ||
+      orig.includes('good english')
     );
   });
 
@@ -211,14 +226,29 @@ export function auditGrammarQuality(
   // Determine evidence-based maximum allowable Grammar Band
   let maxAllowedGrammarBand = 9.0;
 
-  if (totalWords >= 15) {
-    if (hasRepeatedBasicErrors && errorDensity >= 4.0) {
-      // Frequent basic errors in short responses (e.g. 2+ basic mistakes in 40 words)
+  if (totalWords < 12) {
+    if (hasRepeatedBasicErrors || (errorCount >= 1 && errorDensity >= 10.0)) {
+      maxAllowedGrammarBand = 3.5;
+      patternObservations.push('Basic grammatical errors in an extremely brief utterance indicate severe structural limitations.');
+    } else if (errorCount >= 1) {
+      maxAllowedGrammarBand = 4.5;
+      patternObservations.push('Grammatical errors in a brief utterance limit structural accuracy.');
+    } else {
       maxAllowedGrammarBand = 5.0;
-      patternObservations.push('Persistent basic tense and agreement errors prevent Band 6+ control.');
+      patternObservations.push('Utterance was too brief to demonstrate grammatical range or complex sentence structures.');
+    }
+  } else {
+    if (hasRepeatedBasicErrors && errorDensity >= 7.0) {
+      // Pervasive basic errors in short/medium utterance (e.g. 2+ basic mistakes in 25 words)
+      maxAllowedGrammarBand = 3.5;
+      patternObservations.push('Pervasive basic grammatical errors and auxiliary misuse severely impair structural accuracy (Band 3.5 ceiling).');
+    } else if (hasRepeatedBasicErrors && errorDensity >= 4.0) {
+      // Frequent basic errors in short responses (e.g. 2+ basic mistakes in 40 words)
+      maxAllowedGrammarBand = 4.5;
+      patternObservations.push('Frequent basic tense and agreement errors prevent Band 5.5+ control.');
     } else if (hasRepeatedBasicErrors || errorDensity >= 3.0) {
       // Multiple basic errors throughout the speech
-      maxAllowedGrammarBand = 5.5;
+      maxAllowedGrammarBand = 5.0;
       patternObservations.push('Repeated grammatical errors reduce overall control of sentence structures.');
     } else if (errorCount >= 3 && complexStructureCount === 0) {
       // Errors with simple structures and zero complex forms attempted
@@ -291,7 +321,19 @@ export function auditLexicalQuality(transcripts: string[]): LexicalAudit {
   let maxAllowedLexicalBand = 9.0;
   const observations: string[] = [];
 
-  if (totalTokens >= 20) {
+  const hasInappropriateSlangOrProfanity = /\b(yo\s+bro|bro\b|fucking|fuck|shit|bitch|crap)\b/i.test(combinedText);
+  if (hasInappropriateSlangOrProfanity) {
+    maxAllowedLexicalBand = Math.min(maxAllowedLexicalBand, 3.5);
+    observations.push('Used inappropriate informal slang or profanity, failing official IELTS examination register.');
+  }
+
+  if (totalTokens < 12) {
+    maxAllowedLexicalBand = Math.min(maxAllowedLexicalBand, 3.5);
+    observations.push('Extremely brief response with insufficient vocabulary tokens to demonstrate lexical flexibility.');
+  } else if (totalTokens < 30 && (overusedWords.length >= 1 || uniqueTokenRatio < 0.65)) {
+    maxAllowedLexicalBand = Math.min(maxAllowedLexicalBand, 4.0);
+    observations.push(`Repetitive basic word choice in brief turn (${overusedWords.join(', ')}).`);
+  } else if (totalTokens >= 15) {
     if (uniqueTokenRatio <= 0.35 || (overusedWords.length >= 2 && elementaryRepetitionCount >= 6)) {
       // Heavy repetition of basic vocabulary
       maxAllowedLexicalBand = 5.0;
@@ -329,6 +371,7 @@ export interface FluencyAudit {
  * Enforces IELTS Fluency & Coherence descriptors:
  * - Normal speaking rate is ~110-150 words per minute.
  * - Heavy pausing, very slow speech (<75 wpm), or dense hesitation markers cap Fluency at Band 4.5-5.5.
+ * - Extremely short, undeveloped responses cannot demonstrate high fluency.
  */
 export function auditFluencyQuality(responses: RecordedResponse[]): FluencyAudit {
   let totalWords = 0;
@@ -354,16 +397,27 @@ export function auditFluencyQuality(responses: RecordedResponse[]): FluencyAudit
   let maxAllowedFluencyBand = 9.0;
   const observations: string[] = [];
 
+  if (totalWords < 15) {
+    maxAllowedFluencyBand = Math.min(maxAllowedFluencyBand, 3.0);
+    observations.push('Utterance was extremely brief; unable to demonstrate continuity, idea development, or complex linking.');
+  } else if (totalWords < 30) {
+    maxAllowedFluencyBand = Math.min(maxAllowedFluencyBand, 3.5);
+    observations.push('Utterance was too brief to sustain extended discourse or demonstrate fluency.');
+  } else if (totalWords < 50) {
+    maxAllowedFluencyBand = Math.min(maxAllowedFluencyBand, 4.5);
+    observations.push('Response was brief; speech was not sustained sufficiently to demonstrate extended discourse.');
+  }
+
   if (durationMinutes >= 0.25 || responses.length >= 2) {
     const hesitationDensity = (hesitationCount / Math.max(1, totalWords)) * 100;
     if (wordsPerMinute < 65 || hesitationDensity >= 10.0) {
-      maxAllowedFluencyBand = 4.5;
+      maxAllowedFluencyBand = Math.min(maxAllowedFluencyBand, 4.5);
       observations.push('Frequent noticeable pauses, slow speech rate, and hesitation significantly impair fluency.');
     } else if (wordsPerMinute < 85 || hesitationDensity >= 6.0) {
-      maxAllowedFluencyBand = 5.5;
+      maxAllowedFluencyBand = Math.min(maxAllowedFluencyBand, 5.5);
       observations.push('Speech flow is frequently slowed by pauses and language-related hesitation.');
     } else if (wordsPerMinute < 105) {
-      maxAllowedFluencyBand = 6.5;
+      maxAllowedFluencyBand = Math.min(maxAllowedFluencyBand, 6.5);
       observations.push('Maintains basic continuity though speech pace is somewhat deliberate with occasional pauses.');
     }
   }
@@ -430,22 +484,19 @@ export function reconcileEvaluationResult(
   const confidenceScore = calculateEvaluationConfidence(responses, rawResult.testDurationSeconds || 0);
 
   // Apply deterministic descriptor caps
-  let grammarBand = normalizeBandScore(rawResult.grammarBand);
-  if (grammarBand > grammarAudit.maxAllowedGrammarBand) {
-    grammarBand = grammarAudit.maxAllowedGrammarBand;
+  const rawGrammar = normalizeBandScore(rawResult.grammarBand);
+  const rawLexical = normalizeBandScore(rawResult.lexicalBand);
+  const rawFluency = normalizeBandScore(rawResult.fluencyBand);
+  const rawPronunciation = normalizeBandScore(rawResult.pronunciationBand);
+
+  if (rawGrammar === null || rawLexical === null || rawFluency === null) {
+    throw new Error('Evaluation incomplete: AI examiner did not provide valid linguistic criteria scores.');
   }
 
-  let lexicalBand = normalizeBandScore(rawResult.lexicalBand);
-  if (lexicalBand > lexicalAudit.maxAllowedLexicalBand) {
-    lexicalBand = lexicalAudit.maxAllowedLexicalBand;
-  }
-
-  let fluencyBand = normalizeBandScore(rawResult.fluencyBand);
-  if (fluencyBand > fluencyAudit.maxAllowedFluencyBand) {
-    fluencyBand = fluencyAudit.maxAllowedFluencyBand;
-  }
-
-  const pronunciationBand = normalizeBandScore(rawResult.pronunciationBand);
+  const grammarBand = Math.min(rawGrammar, grammarAudit.maxAllowedGrammarBand);
+  const lexicalBand = Math.min(rawLexical, lexicalAudit.maxAllowedLexicalBand);
+  const fluencyBand = Math.min(rawFluency, fluencyAudit.maxAllowedFluencyBand);
+  const pronunciationBand = rawPronunciation !== null ? rawPronunciation : null;
 
   // Compute overall band deterministically via official IELTS rounding rules
   const overallBand = calculateOverallBand({
@@ -460,8 +511,10 @@ export function reconcileEvaluationResult(
     { name: 'Fluency & Coherence', band: fluencyBand },
     { name: 'Lexical Resource', band: lexicalBand },
     { name: 'Grammatical Range & Accuracy', band: grammarBand },
-    { name: 'Pronunciation', band: pronunciationBand },
   ];
+  if (pronunciationBand !== null) {
+    criteriaList.push({ name: 'Pronunciation', band: pronunciationBand });
+  }
 
   criteriaList.sort((a, b) => b.band - a.band);
   const strongestArea = `${criteriaList[0].name} (${criteriaList[0].band.toFixed(1)})`;
@@ -518,7 +571,8 @@ export function reconcileEvaluationResult(
 
 /**
  * Reconciles practice drill feedback with evidence-based scoring.
- * Prevents topic vocabulary or fluency drills from defaulting to Band 7.0 when broken English is spoken.
+ * Prevents topic vocabulary or fluency drills from defaulting to Band 6.5/7.0 when broken English is spoken.
+ * Throws explicit error if evaluation data is missing — NEVER substitutes fake default scores.
  */
 export function reconcilePracticeFeedback(
   raw: Partial<PracticeFeedback>,
@@ -528,32 +582,43 @@ export function reconcilePracticeFeedback(
   const transcripts = [candidateResponse];
   const grammarAudit = auditGrammarQuality(transcripts, raw.corrections || []);
   const lexicalAudit = auditLexicalQuality(transcripts);
+  const words = candidateResponse.trim().split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
 
-  // Compute baseline scores
-  let grammarScore = normalizeBandScore(raw.grammarScore ?? (raw.fluencyScore || 6.5));
-  let lexicalScore = normalizeBandScore(raw.lexicalScore ?? (raw.fluencyScore || 6.5));
-  let fluencyScore = normalizeBandScore(raw.fluencyScore || 6.5);
-  let pronunciationScore = normalizeBandScore(raw.pronunciationScore || 6.5);
+  const fluencyAudit = auditFluencyQuality([
+    {
+      id: 'practice-drill-turn',
+      part: 1,
+      topic: 'Practice Drill',
+      question: 'Drill Prompt',
+      candidateTranscript: candidateResponse,
+      durationSeconds: Math.max(10, Math.round(wordCount / 2)),
+      timestamp: Date.now(),
+    },
+  ]);
 
-  // Enforce grammar caps
-  if (grammarScore > grammarAudit.maxAllowedGrammarBand) {
-    grammarScore = grammarAudit.maxAllowedGrammarBand;
+  // Extract criteria scores — THROW if core scores are missing! NEVER default to 6.5!
+  const rawGrammar = raw.grammarScore ?? (raw as any).grammar?.band;
+  const rawLexical = raw.lexicalScore ?? (raw as any).lexical_resource?.band;
+  const rawFluency = raw.fluencyScore ?? (raw as any).fluency?.band;
+  const rawPronunciation = raw.pronunciationScore ?? (raw as any).pronunciation?.band;
+
+  const normalizedGrammar = normalizeBandScore(rawGrammar);
+  const normalizedLexical = normalizeBandScore(rawLexical);
+  const normalizedFluency = normalizeBandScore(rawFluency);
+  const normalizedPronunciation = normalizeBandScore(rawPronunciation);
+
+  if (normalizedGrammar === null || normalizedLexical === null || normalizedFluency === null) {
+    throw new Error('Evaluation failed: AI evaluator did not produce valid criteria scores.');
   }
 
-  // Enforce lexical caps
-  if (lexicalScore > lexicalAudit.maxAllowedLexicalBand) {
-    lexicalScore = lexicalAudit.maxAllowedLexicalBand;
-  }
+  // Apply deterministic descriptor caps
+  const grammarScore = Math.min(normalizedGrammar, grammarAudit.maxAllowedGrammarBand);
+  const lexicalScore = Math.min(normalizedLexical, lexicalAudit.maxAllowedLexicalBand);
+  const fluencyScore = Math.min(normalizedFluency, fluencyAudit.maxAllowedFluencyBand);
+  const pronunciationScore = normalizedPronunciation !== null ? normalizedPronunciation : null;
 
-  // If the candidate spoke fewer than 10 words, penalize accordingly
-  const wordCount = candidateResponse.trim().split(/\s+/).filter(Boolean).length;
-  if (wordCount < 10) {
-    fluencyScore = Math.min(fluencyScore, 5.0);
-    lexicalScore = Math.min(lexicalScore, 5.0);
-    grammarScore = Math.min(grammarScore, 5.0);
-    pronunciationScore = Math.min(pronunciationScore, 5.5);
-  }
-
+  // Calculate overall practice band deterministically from evaluated criteria
   const practiceBandEstimate = calculateOverallBand({
     fluency: fluencyScore,
     lexical: lexicalScore,
@@ -564,50 +629,66 @@ export function reconcilePracticeFeedback(
   // Reconcile strengths so positive praise never overrides poor scores
   const strengths = (raw.strengths || []).filter((s) => {
     const low = s.toLowerCase();
-    if (grammarScore <= 5.5 && (low.includes('good grammar') || low.includes('accurate') || low.includes('excellent grammar'))) {
+    if (grammarScore <= 5.0 && (low.includes('good grammar') || low.includes('accurate') || low.includes('excellent grammar') || low.includes('strong grammar'))) {
       return false;
     }
-    if (lexicalScore <= 5.5 && (low.includes('rich vocabulary') || low.includes('advanced words'))) {
+    if (lexicalScore <= 5.0 && (low.includes('rich vocabulary') || low.includes('advanced words') || low.includes('good vocabulary'))) {
+      return false;
+    }
+    if (fluencyScore <= 4.5 && (low.includes('fluent') || low.includes('extended') || low.includes('smooth'))) {
       return false;
     }
     return true;
   });
 
   if (strengths.length === 0) {
-    strengths.push('Demonstrated willingness to produce spontaneous spoken English.');
+    strengths.push('Candidate attempted to communicate spontaneously.');
   }
 
-  const weaknesses = raw.weaknesses || [];
-  if (grammarAudit.patternObservations.length > 0) {
-    for (const obs of grammarAudit.patternObservations) {
-      if (!weaknesses.includes(obs)) weaknesses.push(obs);
-    }
+  const weaknesses = [...(raw.weaknesses || [])];
+  for (const obs of grammarAudit.patternObservations) {
+    if (!weaknesses.includes(obs)) weaknesses.push(obs);
+  }
+  for (const obs of lexicalAudit.observations) {
+    if (!weaknesses.includes(obs)) weaknesses.push(obs);
+  }
+  for (const obs of fluencyAudit.observations) {
+    if (!weaknesses.includes(obs)) weaknesses.push(obs);
   }
 
-  // Construct evidence breakdown
+  // Filter corrections to only include mistakes candidate actually uttered
+  const validatedCorrections = (raw.corrections || []).filter((c) => {
+    if (!c.original) return false;
+    const cleanOrig = c.original.toLowerCase().trim().replace(/[.,!?'"]/g, '');
+    const cleanText = candidateResponse.toLowerCase().replace(/[.,!?'"]/g, '');
+    return cleanText.includes(cleanOrig) || cleanOrig.split(' ').filter(w => w.length > 3).some(w => cleanText.includes(w));
+  });
+
   const criterionEvidence = {
-    fluency: [
-      wordCount >= 30
-        ? 'Maintained continuous speech without long pauses.'
-        : 'Response was brief; practice speaking at greater length.',
+    fluency: (raw as any).fluency?.evidence || [
+      fluencyScore <= 4.5
+        ? (fluencyAudit.observations[0] || 'Response was brief; practice speaking at greater length.')
+        : 'Maintained continuous speech without disruptive pauses.',
     ],
-    lexical: [
+    lexical: (raw as any).lexical_resource?.evidence || [
       lexicalAudit.observations[0] ||
         (lexicalScore >= 7.0
           ? 'Used natural, topic-appropriate vocabulary.'
-          : 'Vocabulary met basic requirements with room for more precise collocations.'),
+          : 'Vocabulary range was basic with limited precision.'),
     ],
-    grammar: [
+    grammar: (raw as any).grammar?.evidence || [
       grammarAudit.patternObservations[0] ||
         (grammarScore >= 7.0
           ? 'Demonstrated control of complex structures with few errors.'
-          : 'Work on past tense consistency and subject-verb agreement.'),
+          : 'Multiple basic grammatical errors observed; review sentence structure.'),
     ],
-    pronunciation: [
-      pronunciationScore >= 7.0
-        ? 'Clear and natural articulation throughout.'
-        : 'Ensure clear word stress on key content words.',
-    ],
+    pronunciation: pronunciationScore !== null
+      ? ((raw as any).pronunciation?.evidence || [
+          pronunciationScore >= 7.0
+            ? 'Clear and natural articulation throughout.'
+            : 'Ensure clear word stress and consistent rhythm on content words.',
+        ])
+      : ['Pronunciation could not be assessed because audio analysis was not available for this practice turn.'],
   };
 
   return {
@@ -616,15 +697,17 @@ export function reconcilePracticeFeedback(
     lexicalScore,
     grammarScore,
     pronunciationScore,
+    taskRelevance: (raw as any).task_response?.relevance || (weaknesses.some(w => w.toLowerCase().includes('missed') || w.toLowerCase().includes('off-topic')) ? 'poor' : 'adequate'),
     strengths,
     weaknesses,
-    corrections: raw.corrections || [],
-    betterPhrasing: raw.betterPhrasing || 'In my experience, having a structured approach allows for meaningful progress.',
+    corrections: validatedCorrections,
+    betterPhrasing: raw.betterPhrasing || 'In my view, having a structured approach allows for meaningful progress.',
     coachingAdvice:
-      grammarScore <= 5.5
-        ? 'Focus especially on past simple tense and subject-verb agreement in your next attempt!'
-        : raw.coachingAdvice || 'Good drill turn! Keep practicing to refine your fluency and sentence range.',
+      grammarScore <= 4.5
+        ? 'Review auxiliary verbs, basic tense consistency, and subject-verb agreement.'
+        : raw.coachingAdvice || 'Keep practicing to refine your fluency and sentence range.',
     criterionEvidence,
-    confidence: wordCount > 40 ? 0.85 : 0.65,
+    confidence: wordCount > 40 && pronunciationScore !== null ? 0.85 : 0.65,
   };
 }
+

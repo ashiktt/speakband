@@ -1,13 +1,13 @@
 // SpeakBand — Server-Side Google Gemini AI Engine (@google/genai SDK v2)
 
-import { GoogleGenAI, Type, Schema } from '@google/genai';
-import {
+import { GoogleGenAI } from '@google/genai';
+import type {
   RecordedResponse,
   IeltsEvaluationResult,
   PracticeDrill,
   PracticeFeedback,
   DrillType,
-} from '@/types/ielts';
+} from '../types/ielts';
 import {
   calculateOverallBand,
   normalizeBandScore,
@@ -115,8 +115,7 @@ export async function evaluateIeltsSpeakingTest(
 ): Promise<IeltsEvaluationResult> {
   const ai = getAiClient();
   if (!ai) {
-    console.warn('[SpeakBand Gemini] GEMINI_API_KEY not configured, using certified IELTS descriptor fallback.');
-    return generateFallbackEvaluation(responses, testDurationSeconds);
+    throw new Error('AI evaluation engine is unavailable: GEMINI_API_KEY is not configured.');
   }
 
   // Assemble full candidate transcript dossier
@@ -234,21 +233,41 @@ STRICT JSON OUTPUT FORMAT ONLY:
   try {
     const contents: any[] = [{ role: 'user', parts: [{ text: evaluationPrompt }, ...audioParts] }];
 
-    const response = await ai.models.generateContent({
-      model: PRIMARY_MODEL,
-      contents,
-      config: {
-        responseMimeType: 'application/json',
-      },
-    });
+    let responseText = '';
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: PRIMARY_MODEL,
+          contents,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+        responseText = response.text || '';
+        if (responseText) break;
+      } catch (err: any) {
+        if (attempt === 2) throw err;
+        console.warn(`[SpeakBand Gemini] Full evaluation attempt ${attempt} failed, retrying...`, err);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
 
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = JSON.parse(responseText || '{}');
 
-    // Normalize criteria scores to official half-bands
-    const fluencyBand = normalizeBandScore(Number(parsed.fluencyBand) || 6.0);
-    const lexicalBand = normalizeBandScore(Number(parsed.lexicalBand) || 6.0);
-    const grammarBand = normalizeBandScore(Number(parsed.grammarBand) || 6.0);
-    const pronunciationBand = normalizeBandScore(Number(parsed.pronunciationBand) || 6.0);
+    // Extract criteria scores — strictly validate without fake defaults
+    const rawFluency = parsed.fluencyBand ?? parsed.fluency?.band;
+    const rawLexical = parsed.lexicalBand ?? parsed.lexical_resource?.band;
+    const rawGrammar = parsed.grammarBand ?? parsed.grammar?.band;
+    const rawPronunciation = parsed.pronunciationBand ?? parsed.pronunciation?.band;
+
+    const fluencyBand = normalizeBandScore(Number(rawFluency));
+    const lexicalBand = normalizeBandScore(Number(rawLexical));
+    const grammarBand = normalizeBandScore(Number(rawGrammar));
+    const pronunciationBand = normalizeBandScore(rawPronunciation);
+
+    if (fluencyBand === null || lexicalBand === null || grammarBand === null) {
+      throw new Error('Evaluation incomplete: Model did not return valid scores for core linguistic criteria.');
+    }
 
     const rawResult: IeltsEvaluationResult = {
       id: `eval_${Date.now()}`,
@@ -264,78 +283,30 @@ STRICT JSON OUTPUT FORMAT ONLY:
       lexicalBand,
       grammarBand,
       pronunciationBand,
-      pronunciationNote: parsed.pronunciationNote || (evaluatedFromAudio ? 'Assessed from acoustic audio.' : 'Audio was insufficient for acoustic analysis.'),
-      performanceSummary: parsed.performanceSummary || 'The candidate demonstrated communicative effort with intelligible speech.',
+      pronunciationNote: parsed.pronunciationNote || (evaluatedFromAudio ? 'Assessed directly from acoustic audio recording.' : 'Pronunciation could not be reliably assessed from audio.'),
+      taskRelevance: parsed.task_response?.relevance || 'adequate',
+      performanceSummary: parsed.performanceSummary || 'Candidate completed the examination.',
       strongestArea: parsed.strongestArea || 'Fluency & Coherence',
       weakestArea: parsed.weakestArea || 'Grammatical Range & Accuracy',
-      keyProblems: Array.isArray(parsed.keyProblems) ? parsed.keyProblems : ['Grammatical inconsistency during extended speech'],
-      recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : ['Focus on past tense consistency and varied subordinate clauses'],
+      keyProblems: Array.isArray(parsed.keyProblems) ? parsed.keyProblems : [],
+      recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : [],
       evidence: {
-        fluency: parsed.evidence?.fluency || ['Maintained basic continuous flow.'],
-        lexical: parsed.evidence?.lexical || ['Everyday conversational vocabulary.'],
-        grammar: parsed.evidence?.grammar || ['Sentence structure patterns.'],
-        pronunciation: parsed.evidence?.pronunciation || ['Intelligible speech rhythm.'],
+        fluency: parsed.evidence?.fluency || parsed.fluency?.evidence || [],
+        lexical: parsed.evidence?.lexical || parsed.lexical_resource?.evidence || [],
+        grammar: parsed.evidence?.grammar || parsed.grammar?.evidence || [],
+        pronunciation: parsed.evidence?.pronunciation || parsed.pronunciation?.evidence || (evaluatedFromAudio ? [] : ['Audio was insufficient for acoustic pronunciation scoring.']),
       },
-      actualMistakes: Array.isArray(parsed.actualMistakes) ? parsed.actualMistakes : [],
+      actualMistakes: Array.isArray(parsed.actualMistakes) ? parsed.actualMistakes : (parsed.grammar?.corrections || []),
       answerReviews: Array.isArray(parsed.answerReviews) ? parsed.answerReviews : [],
       testDurationSeconds,
     };
 
     // Reconcile through deterministic auditing guardrails
     return reconcileEvaluationResult(rawResult, responses);
-  } catch (err) {
-    console.error('[SpeakBand Gemini] Full evaluation failed, generating fallback assessment:', err);
-    return generateFallbackEvaluation(responses, testDurationSeconds);
+  } catch (err: any) {
+    console.error('[SpeakBand Gemini] Full evaluation failed:', err);
+    throw new Error(err?.message || 'IELTS speaking evaluation could not be completed.');
   }
-}
-
-// Resilient fallback evaluation with deterministic evidence audit
-function generateFallbackEvaluation(
-  responses: RecordedResponse[],
-  testDurationSeconds: number
-): IeltsEvaluationResult {
-  const initialResult: IeltsEvaluationResult = {
-    id: `eval_fallback_${Date.now()}`,
-    testId: `test_fallback_${Date.now()}`,
-    createdAt: new Date().toISOString(),
-    overallBand: 6.0,
-    fluencyBand: 6.0,
-    lexicalBand: 6.0,
-    grammarBand: 6.0,
-    pronunciationBand: 6.0,
-    pronunciationNote: 'Evaluated using certified IELTS band descriptors.',
-    performanceSummary: 'The candidate answered the examination questions, demonstrating communicative competence across familiar topics.',
-    strongestArea: 'Fluency & Coherence',
-    weakestArea: 'Grammatical Range & Accuracy',
-    keyProblems: [
-      'Occasional grammatical hesitation when formulating complex ideas.',
-      'Repetition of common connecting words.',
-    ],
-    recommendedActions: [
-      'Practice speaking for 2 minutes without pausing.',
-      'Incorporate academic discourse markers.',
-    ],
-    evidence: {
-      fluency: ['Maintained understandable flow throughout.'],
-      lexical: ['Sufficient range to convey intended meaning.'],
-      grammar: ['Control of basic structures with room for greater complex range.'],
-      pronunciation: ['Generally intelligible.'],
-    },
-    actualMistakes: [],
-    answerReviews: responses.slice(0, 3).map((r) => ({
-      part: r.part,
-      topic: r.topic,
-      question: r.question,
-      candidateTranscript: r.candidateTranscript || 'Completed answer.',
-      keyIssues: ['Minor hesitation'],
-      betterVersion: 'In my view, having a structured approach to learning allows individuals to achieve sustainable long-term success.',
-      usefulLanguage: ['sustainable long-term success', 'in my view', 'structured approach'],
-    })),
-    testDurationSeconds,
-  };
-
-  // Reconcile against candidate speech
-  return reconcileEvaluationResult(initialResult, responses);
 }
 
 // 3. PERSONALIZED PRACTICE DRILL GENERATOR
@@ -430,78 +401,145 @@ Respond ONLY with valid JSON matching:
   }
 }
 
-// 4. COACHING DRILL RESPONSE EVALUATION (Evidence-Based Practice Assessment)
+// 4. COACHING DRILL RESPONSE EVALUATION (Evidence-First Practice Assessment)
 export async function evaluatePracticeResponse(params: {
   drill: PracticeDrill;
   candidateResponse: string;
+  audioBase64?: string;
+  audioMimeType?: string;
+  durationSeconds?: number;
 }): Promise<PracticeFeedback> {
   const { drill, candidateResponse } = params;
+  const hasAudio = Boolean(params.audioBase64 && params.audioBase64.length > 500);
 
-  const prompt = `You are a certified IELTS Speaking Coach evaluating a student's targeted practice drill.
+  const prompt = `You are a certified, rigorous IELTS Speaking Examiner evaluating a candidate's targeted practice drill.
 Drill Title: "${drill.title}"
-Focus Skill: ${drill.focusSkill}
-Prompt: "${drill.prompt}"
+Focus Skill: "${drill.focusSkill}"
+Assigned Task Prompt: "${drill.prompt}"
 Target Collocations: ${JSON.stringify(drill.targetCollocations)}
 
-Candidate Spoken Response:
+Candidate Spoken Transcript:
 "${candidateResponse}"
 
-EVALUATION & CALIBRATION RULES (MANDATORY):
-1. Score the 4 IELTS criteria (0.0 to 9.0 in 0.5 increments):
-   - Fluency: speech continuity, natural flow, pausing.
-   - Lexical: vocabulary range, precision, collocations. If student repeats basic words ("good", "nice"), cap at Band 5.0–5.5!
-   - Grammar: structural range & accuracy. CRITICAL: If student has basic errors (e.g. "I go there last year", "we was", "he don't"), you MUST score Grammar Band 5.0 to 5.5! Do NOT award Band 7+ to grammatically broken speech.
-   - Pronunciation: intelligibility and rhythm.
-2. Calculate "practiceBandEstimate" as the mean of the 4 criteria rounded to the nearest half band.
-3. Every correction in "corrections" MUST come from words the student ACTUALLY SAID. Do not fabricate mistakes.
-4. "strengths" must cite actual spoken phrases. Positive encouragement must NEVER contradict low scores.
-5. "betterPhrasing": Provide an authentic Band 8.5 model reformulation of what the candidate intended to say.
+Audio Input Available: ${hasAudio ? 'YES (audio recording provided)' : 'NO (transcript only, no audio)'}
 
-Respond ONLY with valid JSON:
+NON-NEGOTIABLE IELTS ASSESSMENT RULES:
+1. INDEPENDENT CRITERIA EVALUATION:
+   Evaluate each criterion separately against official published IELTS Speaking Band Descriptors (0.0 to 9.0 in 0.5 increments).
+   NEVER assign uniform identical scores across criteria unless the linguistic evidence identically justifies each one.
+
+2. FLUENCY & COHERENCE:
+   - Band 7+: Speaks at length without noticeable effort; develops topics coherently.
+   - Band 5.0–6.0: Maintains flow but loses coherence through repetition, self-correction, or hesitation.
+   - Band 3.5–4.5: Response is extremely brief (e.g. 15-25 words), undeveloped, or completely off-topic; unable to sustain speech or link ideas.
+
+3. LEXICAL RESOURCE:
+   - Band 7+: Uses flexible vocabulary with awareness of style and collocation.
+   - Band 5.0–5.5: Limited flexibility; relies heavily on basic words ("good", "very good", "nice").
+   - Band 3.0–4.0: Repetitive basic words, extremely restricted vocabulary, or inappropriate informal slang/profanity ("yo bro", "fucking") failing formal IELTS examination register.
+
+4. GRAMMATICAL RANGE & ACCURACY:
+   - Band 7+: Variety of complex structures; frequently produces error-free sentences.
+   - Band 5.0–5.5: Basic sentence forms produced with reasonable accuracy; complex forms contain errors.
+   - Band 3.0–4.0: Multiple basic systematic errors (e.g. "I'm was talking", "I'm very good English", "we was", "he don't") with high error density. CRITICAL: A response with basic auxiliary confusion or broken grammar MUST receive Band 3.0–4.0!
+
+5. PRONUNCIATION:
+   ${hasAudio ? 'Evaluate rhythm, stress, and intelligibility directly from the attached audio recording.' : 'NO AUDIO RECORDING AVAILABLE. Set pronunciation band to null and state in evidence that audio was not available for assessment.'}
+
+6. NEGATIVE EVIDENCE REQUIREMENT:
+   For every criterion, identify what positive features exist AND explicitly state what limitations or errors prevent a higher band.
+
+7. TASK RELEVANCE:
+   Assess whether the candidate actually addressed the assigned prompt: "${drill.prompt}". If they spoke about something completely different or asked the examiner about their English, mark task_response as "poor".
+
+8. FACTUAL CORRECTIONS:
+   Every correction in "corrections" MUST quote phrases the candidate ACTUALLY SPOKE in the transcript. Do NOT invent errors.
+
+Respond ONLY with valid JSON matching:
 {
-  "practiceBandEstimate": 5.5,
-  "fluencyScore": 6.0,
-  "lexicalScore": 5.5,
-  "grammarScore": 5.0,
-  "pronunciationScore": 6.0,
-  "strengths": ["Quoted strength 1", "Quoted strength 2"],
-  "weaknesses": ["Specific weakness observed"],
-  "corrections": [
-    {
-      "original": "exact spoken phrase",
-      "correction": "grammatically natural version",
-      "explanation": "concise grammar rule explanation"
-    }
-  ],
-  "betterPhrasing": "Band 8.5 model phrasing of their idea",
-  "coachingAdvice": "Actionable teacher tip for their next recording"
+  "fluency": {
+    "band": 4.0,
+    "positive_features": ["Attempted to communicate"],
+    "limitations": ["Response was brief (23 words); unable to sustain speech; failed to develop the prompt"],
+    "evidence": ["Short utterance with limited progression"]
+  },
+  "lexical_resource": {
+    "band": 3.5,
+    "positive_features": ["Basic vocabulary attempted"],
+    "limitations": ["Heavy repetition of 'good'; inappropriate informal slang ('yo bro') and profanity for an IELTS exam"],
+    "evidence": ["Repeated 'good'; used informal slang and profanity"]
+  },
+  "grammar": {
+    "band": 3.0,
+    "positive_features": ["Attempted subject-verb constructions"],
+    "limitations": ["Severe auxiliary verb combination error ('I'm was talking'), malformed predicate ('I'm very good English')"],
+    "evidence": ["High density of basic grammatical errors in short response"],
+    "corrections": [
+      {
+        "original": "I'm was talking",
+        "correction": "I was speaking",
+        "explanation": "Do not combine present auxiliary 'am' ('I'm') with past continuous auxiliary 'was'."
+      },
+      {
+        "original": "I'm very good English",
+        "correction": "My English is very good",
+        "explanation": "Use 'My English is very good' or 'I am very good at English'."
+      }
+    ]
+  },
+  "pronunciation": {
+    "band": ${hasAudio ? '5.0' : 'null'},
+    "confidence": ${hasAudio ? '0.85' : '0'},
+    "evidence": ["${hasAudio ? 'Intelligible articulation from audio.' : 'Pronunciation could not be assessed because audio analysis was not available for this practice turn.'}"]
+  },
+  "task_response": {
+    "relevance": "poor",
+    "evidence": ["The response did not answer the assigned question about foreign languages."]
+  },
+  "strengths": ["Clear communicative intent"],
+  "weaknesses": ["Severe grammatical inaccuracies", "Repetitive vocabulary", "Inappropriate register for IELTS"],
+  "betterPhrasing": "Mastering a foreign language is an invaluable asset in today's globalized world because it enables speakers to understand subtle cultural nuances and connect meaningfully with diverse communities.",
+  "coachingAdvice": "Focus on past tense consistency, correct auxiliary use ('I was speaking' instead of 'I'm was talking'), and addressing the specific prompt with formal vocabulary."
 }`;
 
-  try {
-    const ai = getAiClient();
-    if (!ai) {
-      throw new Error('Gemini API key not configured; using pedagogical evaluator.');
-    }
+  const ai = getAiClient();
+  if (!ai) {
+    throw new Error('Gemini API key not configured.');
+  }
 
-    const response = await ai.models.generateContent({
-      model: PRIMARY_MODEL,
-      contents: prompt,
-      config: { responseMimeType: 'application/json' },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    return reconcilePracticeFeedback(parsed, candidateResponse, drill.focusSkill);
-  } catch (err) {
-    console.warn('[SpeakBand Gemini] Practice evaluation fallback:', err);
-    return reconcilePracticeFeedback(
-      {
-        strengths: ['Clear effort to communicate ideas directly.'],
-        corrections: [],
-        betterPhrasing: drill.modelAnswer,
-        coachingAdvice: 'Review target collocations and practice past tense consistency on your next attempt.',
+  const contents: any[] = [];
+  if (hasAudio && params.audioBase64) {
+    contents.push({
+      inlineData: {
+        mimeType: params.audioMimeType || 'audio/webm',
+        data: params.audioBase64,
       },
-      candidateResponse,
-      drill.focusSkill
-    );
+    });
+  }
+  contents.push({ text: prompt });
+
+  let responseText = '';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: PRIMARY_MODEL,
+        contents,
+        config: { responseMimeType: 'application/json' },
+      });
+      responseText = response.text || '';
+      if (responseText) break;
+    } catch (err: any) {
+      if (attempt === 2) throw err;
+      console.warn(`[SpeakBand Gemini] Practice evaluation attempt ${attempt} failed, retrying...`, err);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(responseText || '{}');
+    return reconcilePracticeFeedback(parsed, candidateResponse, drill.focusSkill);
+  } catch (err: any) {
+    console.error('[SpeakBand Gemini] Practice evaluation parsing/reconciliation error:', err);
+    throw new Error(err?.message || 'Evaluation could not be completed from AI output.');
   }
 }

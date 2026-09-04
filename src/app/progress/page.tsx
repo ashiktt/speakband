@@ -1,4 +1,4 @@
-﻿// SpeakBand — Candidate Progress & Criterion Analytics (Production UX & Empty States)
+// SpeakBand — Candidate Progress & Criterion Analytics (Production UX & Empty States)
 
 'use client';
 
@@ -202,7 +202,10 @@ export default function ProgressPage() {
   const avgFluency = (tests.reduce((acc, t) => acc + t.fluencyBand, 0) / totalTests).toFixed(1);
   const avgLexical = (tests.reduce((acc, t) => acc + t.lexicalBand, 0) / totalTests).toFixed(1);
   const avgGrammar = (tests.reduce((acc, t) => acc + t.grammarBand, 0) / totalTests).toFixed(1);
-  const avgPronunciation = (tests.reduce((acc, t) => acc + t.pronunciationBand, 0) / totalTests).toFixed(1);
+  const pronunciationTests = tests.filter((t) => typeof t.pronunciationBand === 'number' && t.pronunciationBand !== null);
+  const avgPronunciation = pronunciationTests.length > 0
+    ? (pronunciationTests.reduce((acc, t) => acc + (t.pronunciationBand as number), 0) / pronunciationTests.length).toFixed(1)
+    : '—';
 
   const weakestCriterion = latestTest.weakestArea.split('(')[0].trim() || 'General Speaking';
 
@@ -371,7 +374,7 @@ export default function ProgressPage() {
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
                     FC: {t.fluencyBand.toFixed(1)} • LR: {t.lexicalBand.toFixed(1)} • GRA:{' '}
-                    {t.grammarBand.toFixed(1)} • P: {t.pronunciationBand.toFixed(1)}
+                    {t.grammarBand.toFixed(1)} • P: {t.pronunciationBand !== null ? t.pronunciationBand.toFixed(1) : '—'}
                   </div>
                 </div>
               </div>

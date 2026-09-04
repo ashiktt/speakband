@@ -13,12 +13,26 @@ export async function POST(req: NextRequest) {
 
     if (!responses || !Array.isArray(responses) || responses.length === 0) {
       return NextResponse.json(
-        { error: 'No test responses provided for evaluation' },
+        { success: false, error: 'No test responses provided for evaluation' },
         { status: 400 }
       );
     }
 
+    console.log('[API Full Exam Eval] INPUT:', {
+      responseCount: responses.length,
+      hasAudioSamples: responses.some(r => Boolean(r.audioBase64)),
+      testDurationSeconds,
+    });
+
     const evaluation = await evaluateIeltsSpeakingTest(responses, testDurationSeconds);
+
+    console.log('[API Full Exam Eval] CALCULATION:', {
+      overallBand: evaluation.overallBand,
+      fluency: evaluation.fluencyBand,
+      lexical: evaluation.lexicalBand,
+      grammar: evaluation.grammarBand,
+      pronunciation: evaluation.pronunciationBand,
+    });
 
     return NextResponse.json({
       success: true,

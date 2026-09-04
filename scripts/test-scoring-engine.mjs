@@ -364,6 +364,127 @@ console.log('\n--- PRACTICE MODE: Anti-Inflation & Fallback Protection ---');
   );
 }
 
+// ----------------------------------------------------
+// TEST 8 — Critical User Utterance ("yo bro you know I'm very good English...")
+// ----------------------------------------------------
+console.log('\n--- TEST 8: Critical Slang / Broken Utterance (Anti-6.5 Test) ---');
+{
+  const userText = "yo bro you know I'm very good English and I'm was talking very good English and I'm fucking English how was my English bro please";
+  const grammarAudit = auditGrammarQuality([userText], [
+    { original: "I'm very good English", correction: "I speak very good English", explanation: "Predicate error" },
+    { original: "I'm was talking", correction: "I was talking", explanation: "Double auxiliary" },
+  ]);
+
+  assert(
+    grammarAudit.maxAllowedGrammarBand <= 3.5,
+    `Grammar cap for broken utterance is ${grammarAudit.maxAllowedGrammarBand} (expected <= 3.5, NOT 6.5)`
+  );
+
+  const lexicalAudit = auditLexicalQuality([userText]);
+  assert(
+    lexicalAudit.maxAllowedLexicalBand <= 3.5,
+    `Lexical cap for slang/profanity utterance is ${lexicalAudit.maxAllowedLexicalBand} (expected <= 3.5, NOT 6.5)`
+  );
+
+  const fluencyAudit = auditFluencyQuality([
+    {
+      id: 'p-1',
+      part: 1,
+      topic: 'Practice',
+      question: 'Drill',
+      candidateTranscript: userText,
+      durationSeconds: 12,
+      timestamp: Date.now(),
+    },
+  ]);
+
+  assert(
+    fluencyAudit.maxAllowedFluencyBand <= 4.5,
+    `Fluency cap for 23-word utterance is ${fluencyAudit.maxAllowedFluencyBand} (expected <= 4.5, NOT 6.5)`
+  );
+
+  // Even if raw AI returned 6.5 across the board, reconciliation must enforce strict caps
+  const practiceResult = reconcilePracticeFeedback(
+    {
+      fluencyScore: 6.5,
+      grammarScore: 6.5,
+      lexicalScore: 6.5,
+      pronunciationScore: null,
+      strengths: ['Great energy and confidence'],
+      corrections: [
+        { original: "I'm was talking", correction: "I was talking", explanation: "Double auxiliary" },
+      ],
+    },
+    userText
+  );
+
+  assert(
+    practiceResult.practiceBandEstimate <= 3.5,
+    `Reconciled practice band is ${practiceResult.practiceBandEstimate} (expected <= 3.5, NEVER 6.5)`
+  );
+  assert(
+    practiceResult.grammarScore <= 3.5,
+    `Reconciled grammar score is ${practiceResult.grammarScore} (expected <= 3.5)`
+  );
+  assert(
+    practiceResult.lexicalScore <= 3.5,
+    `Reconciled lexical score is ${practiceResult.lexicalScore} (expected <= 3.5)`
+  );
+  assert(
+    practiceResult.pronunciationScore === null,
+    'Pronunciation score is null when no acoustic audio is provided'
+  );
+}
+
+// ----------------------------------------------------
+// TEST 9 — Anti-Fallback & Error Re-throwing Protection
+// ----------------------------------------------------
+console.log('\n--- TEST 9: Anti-Fallback & Missing Score Rejection ---');
+{
+  assert(
+    normalizeBandScore(null) === null,
+    'normalizeBandScore(null) returns null (NEVER defaults to 6.0)'
+  );
+  assert(
+    normalizeBandScore(undefined) === null,
+    'normalizeBandScore(undefined) returns null'
+  );
+  assert(
+    normalizeBandScore(NaN) === null,
+    'normalizeBandScore(NaN) returns null'
+  );
+
+  let threwExpected = false;
+  try {
+    reconcilePracticeFeedback({}, 'Some candidate text');
+  } catch (err) {
+    threwExpected = true;
+    assert(
+      err.message.includes('Evaluation failed'),
+      `reconcilePracticeFeedback threw expected error: "${err.message}"`
+    );
+  }
+  assert(threwExpected, 'Missing scores correctly throw error instead of defaulting to 6.5');
+}
+
+// ----------------------------------------------------
+// TEST 10 — 3-Criterion Band Rounding (When Pronunciation is Null)
+// ----------------------------------------------------
+console.log('\n--- TEST 10: 3-Criterion Band Rounding (Pronunciation = null) ---');
+{
+  // Mean = (6.0 + 6.0 + 6.5) / 3 = 6.1666... -> frac = 0.1666... (< 0.25) -> Band 6.0
+  const band1 = calculateOverallBand({ fluency: 6.0, lexical: 6.0, grammar: 6.5, pronunciation: null });
+  assert(band1 === 6.0, `3-criterion [6.0, 6.0, 6.5, null] produced Band ${band1} (expected 6.0)`);
+
+  // Mean = (6.5 + 6.5 + 7.0) / 3 = 6.6666... -> frac = 0.6666... (>= 0.25 and < 0.75) -> Band 6.5
+  const band2 = calculateOverallBand({ fluency: 6.5, lexical: 6.5, grammar: 7.0, pronunciation: null });
+  assert(band2 === 6.5, `3-criterion [6.5, 6.5, 7.0, null] produced Band ${band2} (expected 6.5)`);
+
+  // Mean = (6.5 + 7.0 + 7.0) / 3 = 6.8333... -> frac = 0.8333... (>= 0.75) -> Band 7.0
+  const band3 = calculateOverallBand({ fluency: 6.5, lexical: 7.0, grammar: 7.0, pronunciation: null });
+  assert(band3 === 7.0, `3-criterion [6.5, 7.0, 7.0, null] produced Band ${band3} (expected 7.0)`);
+}
+
 console.log('\n====================================================');
 console.log(`SUMMARY: All ${passedTests}/${totalTests} tests passed successfully!`);
 console.log('====================================================');

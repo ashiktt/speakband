@@ -3,7 +3,7 @@
 import React from 'react';
 
 interface BandBadgeProps {
-  score: number;
+  score: number | null | undefined;
   size?: 'sm' | 'md' | 'lg' | 'hero';
   label?: string;
   className?: string;
@@ -15,14 +15,20 @@ export const BandBadge: React.FC<BandBadgeProps> = ({
   label,
   className = '',
 }) => {
-  const getBandGradient = (band: number) => {
+  const getBandGradient = (band: number | null | undefined) => {
+    if (band === null || band === undefined || isNaN(band)) {
+      return 'from-slate-400 to-slate-500 text-white shadow-slate-500/20';
+    }
     if (band >= 8.0) return 'from-emerald-500 to-teal-600 text-white shadow-emerald-500/25';
     if (band >= 7.0) return 'from-indigo-600 via-purple-600 to-pink-600 text-white shadow-indigo-500/25';
     if (band >= 6.0) return 'from-purple-600 via-indigo-600 to-indigo-700 text-white shadow-purple-500/20';
     return 'from-amber-500 to-orange-600 text-white shadow-amber-500/20';
   };
 
-  const formattedScore = Number(score).toFixed(1);
+  const formattedScore =
+    score !== null && score !== undefined && !isNaN(score)
+      ? Number(score).toFixed(1)
+      : '—';
 
   if (size === 'hero') {
     return (

@@ -1,10 +1,10 @@
-﻿// SpeakBand — Circular Criteria Score Gauge (Matching QuizTube Design Mockup)
+// SpeakBand — Circular Criteria Score Gauge (Matching QuizTube Design Mockup)
 
 import React from 'react';
 
 interface CircularScoreRingProps {
   label: string;
-  score: number;
+  score: number | null | undefined;
   maxScore?: number;
   size?: number;
   strokeWidth?: number;
@@ -19,7 +19,8 @@ export const CircularScoreRing: React.FC<CircularScoreRingProps> = ({
 }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const percentage = Math.min(Math.max(score / maxScore, 0), 1);
+  const validScore = typeof score === 'number' && !isNaN(score) && score > 0 ? score : 0;
+  const percentage = Math.min(Math.max(validScore / maxScore, 0), 1);
   const strokeDashoffset = circumference - percentage * circumference;
 
   return (
@@ -64,7 +65,7 @@ export const CircularScoreRing: React.FC<CircularScoreRingProps> = ({
 
         {/* Centered Score */}
         <div className="absolute inset-0 flex items-center justify-center font-mono font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">
-          {score > 0 ? score.toFixed(1) : '—'}
+          {typeof score === 'number' && !isNaN(score) && score > 0 ? score.toFixed(1) : '—'}
         </div>
       </div>
 

@@ -144,7 +144,7 @@ export default function ResultsDashboard() {
             </p>
           </div>
           <span className="text-xs font-semibold text-[#7C3AED] dark:text-purple-400 bg-purple-50 dark:bg-purple-950/70 border border-purple-200 dark:border-purple-800 px-3 py-1 rounded-xl w-fit">
-            Equal 25% Weighting
+            {evaluation.pronunciationBand !== null ? 'Equal 25% Weighting' : 'Evaluated Across 3 Core Criteria'}
           </span>
         </div>
 
@@ -152,7 +152,11 @@ export default function ResultsDashboard() {
           <CircularScoreRing label="Fluency & Coherence" score={evaluation.fluencyBand} size={84} />
           <CircularScoreRing label="Lexical Resource" score={evaluation.lexicalBand} size={84} />
           <CircularScoreRing label="Grammatical Range" score={evaluation.grammarBand} size={84} />
-          <CircularScoreRing label="Pronunciation" score={evaluation.pronunciationBand} size={84} />
+          <CircularScoreRing
+            label={evaluation.pronunciationBand !== null ? 'Pronunciation' : 'Pronunciation (No Audio)'}
+            score={evaluation.pronunciationBand}
+            size={84}
+          />
         </div>
       </section>
 

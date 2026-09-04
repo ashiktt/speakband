@@ -238,9 +238,16 @@ function PracticeContent() {
     setIsEvaluating(true);
 
     let finalTranscript = candidateTranscript;
+    let audioBase64: string | undefined = undefined;
+    let audioMimeType: string | undefined = undefined;
+    let durationSeconds: number | undefined = undefined;
+
     if (sttRef.current && sttRef.current.isRecording()) {
       const res = await sttRef.current.stopRecording();
       finalTranscript = textOverride || res.transcript || candidateTranscript;
+      audioBase64 = res.audioBase64 || undefined;
+      audioMimeType = res.audioMimeType;
+      durationSeconds = res.durationSeconds;
     } else if (textOverride) {
       finalTranscript = textOverride;
     }
@@ -253,7 +260,7 @@ function PracticeContent() {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
     try {
       const res = await fetch('/api/coaching/practice', {
@@ -263,6 +270,9 @@ function PracticeContent() {
           action: 'evaluate_drill',
           drill: currentDrillData,
           candidateResponse: finalTranscript,
+          audioBase64,
+          audioMimeType,
+          durationSeconds,
         }),
         signal: controller.signal,
       });
@@ -272,17 +282,15 @@ function PracticeContent() {
       if (data.success && data.feedback) {
         setFeedback(data.feedback);
       } else {
-        throw new Error(data.error || 'Evaluation failed');
+        throw new Error(data.error || 'Evaluation failed. Please try speaking again.');
       }
     } catch (err: any) {
       console.error('[SpeakBand Practice] Evaluation error:', err);
-      // Construct evidence-based fallback feedback directly from candidate response
-      const fallbackFeedback = reconcilePracticeFeedback(
-        {},
-        finalTranscript,
-        activeDrill?.focusSkill || 'Lexical Resource'
+      setErrorMessage(
+        err.name === 'AbortError'
+          ? 'The evaluation request timed out. Please try speaking again.'
+          : err.message || 'Evaluation could not be completed. Please try again.'
       );
-      setFeedback(fallbackFeedback);
     } finally {
       setIsEvaluating(false);
       setMicState('IDLE');
@@ -293,7 +301,7 @@ function PracticeContent() {
   // SCREEN 4: RESULTS / FEEDBACK VIEW
   // =========================================================================
   if (feedback && activeDrill) {
-    const practiceBand = feedback.practiceBandEstimate ?? feedback.fluencyScore ?? 6.0;
+    const practiceBand = feedback.practiceBandEstimate ?? feedback.fluencyScore ?? 0;
 
     return (
       <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-400">
@@ -333,14 +341,16 @@ function PracticeContent() {
             </div>
             <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 pt-1">
               <span className="font-mono text-4xl sm:text-5xl font-black text-slate-900 dark:text-white">
-                {practiceBand.toFixed(1)}
+                {practiceBand > 0 ? practiceBand.toFixed(1) : '—'}
               </span>
               <span className="text-xs font-semibold text-[#7C3AED] dark:text-purple-300">
                 {practiceBand >= 7.5
                   ? 'Demonstrated strong grammatical control and natural fluency.'
                   : practiceBand >= 6.0
                   ? 'Competent effort. Focus on targeted corrections below.'
-                  : 'Identified key priority areas to refine on your next attempt.'}
+                  : practiceBand >= 4.5
+                  ? 'Identified key priority areas to refine on your next attempt.'
+                  : 'Basic communicative attempt. Needs substantial development in grammatical and lexical control.'}
               </span>
             </div>
           </div>
@@ -348,15 +358,15 @@ function PracticeContent() {
           {/* 4 Circular Score Indicators in a Row (Matching Mockup Screen 4) */}
           <div className="p-4 sm:p-6 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/40">
             <div className="grid grid-cols-4 gap-2 sm:gap-4 items-center justify-items-center">
-              <CircularScoreRing label="Fluency" score={feedback.fluencyScore ?? 6.0} />
+              <CircularScoreRing label="Fluency" score={feedback.fluencyScore} />
               <CircularScoreRing
                 label="Lexical Resource"
-                score={feedback.lexicalScore ?? 6.0}
+                score={feedback.lexicalScore}
               />
-              <CircularScoreRing label="Grammar" score={feedback.grammarScore ?? 6.0} />
+              <CircularScoreRing label="Grammar" score={feedback.grammarScore} />
               <CircularScoreRing
-                label="Pronunciation"
-                score={feedback.pronunciationScore ?? 6.0}
+                label={feedback.pronunciationScore !== null ? "Pronunciation" : "Pronunciation (No Audio)"}
+                score={feedback.pronunciationScore}
               />
             </div>
           </div>
@@ -370,34 +380,34 @@ function PracticeContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
                   <div className="font-bold text-slate-800 dark:text-slate-200">
-                    Fluency & Coherence — {feedback.fluencyScore?.toFixed(1) ?? '6.0'}
+                    Fluency & Coherence — {typeof feedback.fluencyScore === 'number' ? feedback.fluencyScore.toFixed(1) : '—'}
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                    {feedback.criterionEvidence.fluency[0]}
+                    {feedback.criterionEvidence.fluency?.[0] || 'Evaluated on speech continuity, pauses, and flow.'}
                   </p>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
                   <div className="font-bold text-slate-800 dark:text-slate-200">
-                    Lexical Resource — {feedback.lexicalScore?.toFixed(1) ?? '6.0'}
+                    Lexical Resource — {typeof feedback.lexicalScore === 'number' ? feedback.lexicalScore.toFixed(1) : '—'}
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                    {feedback.criterionEvidence.lexical[0]}
+                    {feedback.criterionEvidence.lexical?.[0] || 'Evaluated on vocabulary choice, collocations, and range.'}
                   </p>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
                   <div className="font-bold text-slate-800 dark:text-slate-200">
-                    Grammar — {feedback.grammarScore?.toFixed(1) ?? '6.0'}
+                    Grammar — {typeof feedback.grammarScore === 'number' ? feedback.grammarScore.toFixed(1) : '—'}
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                    {feedback.criterionEvidence.grammar[0]}
+                    {feedback.criterionEvidence.grammar?.[0] || 'Evaluated on grammatical accuracy and complex sentence structures.'}
                   </p>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1">
                   <div className="font-bold text-slate-800 dark:text-slate-200">
-                    Pronunciation — {feedback.pronunciationScore?.toFixed(1) ?? '6.0'}
+                    Pronunciation — {typeof feedback.pronunciationScore === 'number' ? feedback.pronunciationScore.toFixed(1) : 'Not Evaluated (No Audio)'}
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                    {feedback.criterionEvidence.pronunciation[0]}
+                    {feedback.criterionEvidence.pronunciation?.[0] || (feedback.pronunciationScore === null ? 'Pronunciation was not evaluated because acoustic audio was not provided.' : '')}
                   </p>
                 </div>
               </div>

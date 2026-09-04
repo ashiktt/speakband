@@ -63,7 +63,7 @@ export interface BandCriteriaScores {
   fluency: number;
   lexical: number;
   grammar: number;
-  pronunciation: number;
+  pronunciation?: number | null;
 }
 
 export interface IeltsEvidence {
@@ -97,8 +97,9 @@ export interface IeltsEvaluationResult {
   fluencyBand: number;
   lexicalBand: number;
   grammarBand: number;
-  pronunciationBand: number;
+  pronunciationBand: number | null;
   pronunciationNote?: string;
+  taskRelevance?: 'good' | 'adequate' | 'poor';
   performanceSummary: string;
   strongestArea: string;
   weakestArea: string;
@@ -137,19 +138,20 @@ export interface PracticeFeedback {
   fluencyScore: number;
   lexicalScore: number;
   grammarScore: number;
-  pronunciationScore: number;
+  pronunciationScore: number | null;
+  taskRelevance?: 'good' | 'adequate' | 'poor';
   strengths: string[];
   weaknesses?: string[];
   corrections: GrammarCorrection[];
   betterPhrasing: string;
   coachingAdvice: string;
-  criterionEvidence?: {
+  criterionEvidence: {
     fluency: string[];
     lexical: string[];
     grammar: string[];
     pronunciation: string[];
   };
-  confidence?: number;
+  confidence: number;
 }
 
 export interface ActiveTestSession {
@@ -182,7 +184,7 @@ export interface TestHistorySummary {
   fluencyBand: number;
   lexicalBand: number;
   grammarBand: number;
-  pronunciationBand: number;
+  pronunciationBand: number | null;
   testDurationSeconds: number;
   weakestSkill: string;
   strongestSkill: string;
